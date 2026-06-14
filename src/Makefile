@@ -658,8 +658,11 @@ ifeq ($(COMP),gcc)
 	endif
 endif
 
-### On mingw use Windows threads, otherwise POSIX
+### On mingw use Windows threads, otherwise POSIX.
+### WASM single-threaded build uses inline execution on the main thread
+### and explicitly disables USE_PTHREADS to avoid pthread_create dependency.
 ifneq ($(comp),mingw)
+ifneq ($(arch),wasm32)
 	CXXFLAGS += -DUSE_PTHREADS
 	# On Android Bionic's C library comes with its own pthread implementation bundled in
 	ifneq ($(OS),Android)
@@ -685,6 +688,7 @@ ifneq ($(comp),mingw)
 			endif
 		endif
 	endif
+endif
 endif
 
 ### 3.2.1 Debugging
@@ -861,7 +865,7 @@ ifeq ($(lsx),yes)
 endif
 
 ifeq ($(arch),wasm32)
-	CXXFLAGS += -msimd128 -DUSE_POPCNT
+	CXXFLAGS += -msimd128 -DUSE_POPCNT -DWASM_SINGLE_THREAD
 	LDFLAGS += -sINITIAL_MEMORY=128MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=3MB
 	ifeq ($(relaxedsimd),yes)
 		CXXFLAGS += -mrelaxed-simd

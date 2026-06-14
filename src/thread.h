@@ -88,7 +88,7 @@ class Thread {
     // Thread has been slightly altered to allow running custom jobs, so
     // this name is no longer correct. However, this class (and ThreadPool)
     // require further work to make them properly generic while maintaining
-    // appropriate specificity regarding search, from the point of view of an
+    // the appropriate specificity regarding search, from the point of view of an
     // outside user, so renaming of this function is left for whenever that happens.
     void  wait_for_search_finished();
     usize id() const { return idx; }
@@ -100,7 +100,12 @@ class Thread {
     std::mutex                mutex;
     std::condition_variable   cv;
     usize                     idx, idxInNuma, totalNuma, nthreads;
+#ifdef WASM_SINGLE_THREAD
+    bool                      searching = false;  // inline execution: always idle
+    bool                      exit      = false;
+#else
     bool                      exit = false, searching = true;  // Set before starting std::thread
+#endif
     NativeThread              stdThread;
     NumaReplicatedAccessToken numaAccessToken;
 };
