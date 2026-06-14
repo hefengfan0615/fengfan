@@ -43,10 +43,12 @@ jobs:
       - name: Build WASM
         run: |
           source $EMSDK_PATH/emsdk_env.sh
+          # Use COMP=gcc: em++ is clang-based, but -dumpversion reports < 16
+          # which would trigger the obsolete -fexperimental-new-pass-manager flag with COMP=clang
           make -j$(nproc) build \
             ARCH=wasm32 \
             CXX=em++ \
-            COMP=clang \
+            COMP=gcc \
             EXTRALDFLAGS="--embed-file pikafish.nnue" \
             EXE=pikafish.js
 
