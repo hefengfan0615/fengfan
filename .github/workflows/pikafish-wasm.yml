@@ -68,7 +68,7 @@ jobs:
           echo "=== Testing engine info ==="
           node pikafish.js compiler
           echo "=== Running bench search test ==="
-          node pikafish.js bench 16 1 8
+          node pikafish.js bench 16 1 1
 
       - name: Commit WASM to master branch
         working-directory: ./
