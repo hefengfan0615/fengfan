@@ -68,7 +68,12 @@ jobs:
           echo "=== Running bench search test ==="
           node pikafish.js bench 16 1 8
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: pikafish-wasm
-          path: wasm/
+      - name: Commit WASM to master branch
+        working-directory: ./
+        run: |
+          git config user.name "Pikafish Bot"
+          git config user.email "pikafish-bot@github.com"
+          # Force-add wasm/ (listed in .gitignore)
+          git add -f wasm/
+          git commit -m "Update WASM build [skip ci]" || echo "No changes to commit"
+          git push
