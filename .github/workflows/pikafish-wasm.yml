@@ -11,6 +11,8 @@ env:
 jobs:
   Pikafish-WASM:
     name: Pikafish WASM
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     defaults:
       run:
