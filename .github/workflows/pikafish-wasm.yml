@@ -5,6 +5,9 @@ on:
     branches:
       - master
 
+env:
+  EMSDK_PATH: /tmp/emsdk
+
 jobs:
   Pikafish-WASM:
     name: Pikafish WASM
@@ -19,19 +22,26 @@ jobs:
 
       - name: Install Emscripten
         run: |
-          git clone https://github.com/emscripten-core/emsdk.git /tmp/emsdk
-          cd /tmp/emsdk
+          git clone https://github.com/emscripten-core/emsdk.git $EMSDK_PATH
+          cd $EMSDK_PATH
           ./emsdk install latest
           ./emsdk activate latest
-          echo "/tmp/emsdk/upstream/emscripten" >> $GITHUB_PATH
-          echo "/tmp/emsdk" >> $GITHUB_PATH
+          # Make emcc/em++ available in PATH for subsequent steps
+          echo "$EMSDK_PATH/upstream/emscripten" >> $GITHUB_PATH
+          echo "$EMSDK_PATH" >> $GITHUB_PATH
+          # Source and verify in current step
+          source $EMSDK_PATH/emsdk_env.sh
+          echo "emcc: $(which emcc)"
           emcc --version
 
       - name: Download NNUE network
-        run: ../scripts/net.sh
+        run: |
+          source $EMSDK_PATH/emsdk_env.sh
+          ../scripts/net.sh
 
       - name: Build WASM
         run: |
+          source $EMSDK_PATH/emsdk_env.sh
           make -j$(nproc) build \
             ARCH=wasm32 \
             CXX=em++ \
