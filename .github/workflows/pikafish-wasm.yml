@@ -37,6 +37,7 @@ jobs:
       - name: Download NNUE network
         run: |
           source $EMSDK_PATH/emsdk_env.sh
+          chmod +x ../scripts/net.sh
           ../scripts/net.sh
 
       - name: Build WASM
