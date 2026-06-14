@@ -1,0 +1,61 @@
+name: Pikafish WASM
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  Pikafish-WASM:
+    name: Pikafish WASM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Emscripten
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git /tmp/emsdk
+          cd /tmp/emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+          echo "/tmp/emsdk/upstream/emscripten" >> $GITHUB_PATH
+          echo "/tmp/emsdk" >> $GITHUB_PATH
+          emcc --version
+
+      - name: Download NNUE network
+        run: ../scripts/net.sh
+
+      - name: Build WASM
+        run: |
+          make -j$(nproc) build \
+            ARCH=wasm32 \
+            CXX=em++ \
+            COMP=clang \
+            EXTRALDFLAGS="--embed-file pikafish.nnue" \
+            EXE=pikafish.js
+
+      - name: Create wasm directory
+        run: mkdir -p ../wasm
+
+      - name: Copy artifacts to wasm folder
+        run: |
+          cp pikafish.js ../wasm/
+          cp pikafish.wasm ../wasm/
+
+      - name: Online test engine search
+        working-directory: wasm
+        run: |
+          echo "=== Testing engine info ==="
+          node pikafish.js compiler
+          echo "=== Running bench search test ==="
+          node pikafish.js bench 16 1 8
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pikafish-wasm
+          path: wasm/
