@@ -152,33 +152,34 @@
 
 <script>
 /* =============================================================
- * 主线程：下载 WASM + JS 文本、显示进度、管理 Worker、显示输出
+ * 主线程：页面加载后立即下载 WASM + JS，引擎启动后常驻
  * 引擎常驻方案：SharedArrayBuffer + Atomics.wait
  *   - 主线程写 SAB，Atomics.notify 唤醒
  *   - Worker 中 stdinByte 从 SAB 读，空则 Atomics.wait
- *   - 引擎只启动一次
+ *   - 引擎只启动一次，callMain 永不返回
  * ============================================================= */
 const outputEl   = document.getElementById('output');
 const statusEl   = document.getElementById('status');
 const overlayEl  = document.getElementById('overlay');
 const loadMsgEl  = document.getElementById('loadMsg');
 const loadBarEl  = document.getElementById('loadBar');
-const loadPctEl = document.getElementById('loadPct');
+const loadPctEl  = document.getElementById('loadPct');
 const btnRun     = document.getElementById('btnRun');
 const btnClear   = document.getElementById('btnClear');
 const fenEl      = document.getElementById('fen');
 const movetimeEl = document.getElementById('movetime');
 
-/* 缓存（WASM 与 JS 文本只下载一次） */
+/* 状态 */
 let cachedWasmBinary = null;
 let cachedJsText    = null;
 let currentWorker   = null;
+let engineReady     = false;  // engine 已启动并 ready
 
 /* SAB 共享环形缓冲区 */
-const SAB_DATA_BYTES = 65536;          // 数据区 64KB
+const SAB_DATA_BYTES = 65536;
 let sab = null;
-let sabInt32 = null;   // [readPos, writePos] — 8 字节
-let sabBytes = null;     // 数据区
+let sabInt32 = null;
+let sabBytes = null;
 let sabAvailable = false;
 
 /* ---------- DOM 辅助 ---------- */
@@ -217,17 +218,15 @@ function tryInitSAB() {
         typeof Atomics.notify !== 'function') {
       return false;
     }
-    // 8 + 65536 = 65544 bytes，4 字节对齐
     const total = 8 + SAB_DATA_BYTES;
     sab = new SharedArrayBuffer(total);
     sabInt32 = new Int32Array(sab, 0, 2);
     sabBytes = new Uint8Array(sab, 8, SAB_DATA_BYTES);
-    Atomics.store(sabInt32, 0, 0);  // readPos
-    Atomics.store(sabInt32, 1, 0);  // writePos
+    Atomics.store(sabInt32, 0, 0);
+    Atomics.store(sabInt32, 1, 0);
     sabAvailable = true;
     return true;
   } catch (e) {
-    appendLine('[系统] SharedArrayBuffer 不可用（' + e.message + '），将使用每次重启模式。', 'sys');
     return false;
   }
 }
@@ -242,7 +241,7 @@ async function downloadWasmWithProgress() {
   if (!resp.body) {
     const ab = await resp.arrayBuffer();
     setLoadProgress(100, '下载完成');
-    appendLine('[调试] 一次性读取 ' + (ab.byteLength/1024/1024).toFixed(2) + ' MB（无 streaming 模式）', 'dbg');
+    appendLine('[调试] 一次性读取 ' + (ab.byteLength/1024/1024).toFixed(2) + ' MB', 'dbg');
     return ab;
   }
   const reader = resp.body.getReader();
@@ -266,7 +265,7 @@ async function downloadWasmWithProgress() {
   return result.buffer;
 }
 
-/* ---------- 下载引擎 JS 文本 ---------- */
+/* ---------- 下载引擎 JS ---------- */
 async function downloadEngineJs() {
   const url = getAssetBase() + 'wasm/pikafish.js';
   appendLine('[调试] 下载引擎 JS: ' + url, 'dbg');
@@ -277,161 +276,212 @@ async function downloadEngineJs() {
   return txt;
 }
 
-/* ---------- 确保缓存就绪 ---------- */
-async function ensureAssets() {
-  if (!cachedWasmBinary) cachedWasmBinary = await downloadWasmWithProgress();
-  if (!cachedJsText) {
-    setLoadProgress(98, '读取引擎运行时…');
-    cachedJsText = await downloadEngineJs();
-  }
-  setLoadProgress(100, '启动引擎…');
-}
-
 /* ---------- 主线程：往 SAB 写命令 ---------- */
 function writeCommandsToSAB(commandText) {
-  // 写入字节到环形缓冲区，每写一个就 notify 一次
   for (let i = 0; i < commandText.length; i++) {
     const byte = commandText.charCodeAt(i);
-    // wait 直到有空间（正常情况下命令文本远小于缓冲区大小，不会阻塞）
-    // writePos - readPos 不能 >= SAB_DATA_BYTES
-    // 这里简单处理：如果缓冲区快满了，等待 Worker 读
     while (true) {
       const r = Atomics.load(sabInt32, 0);
       const w = Atomics.load(sabInt32, 1);
       if (w - r < SAB_DATA_BYTES) break;
-      // 缓冲区已满 — 等待 Worker 读
       Atomics.wait(sabInt32, 0, r, 100);
     }
     const w = Atomics.load(sabInt32, 1);
     sabBytes[w % SAB_DATA_BYTES] = byte;
-    // 用 store 精确设置新值（而不是 add 累加，避免并发时错误）
     Atomics.store(sabInt32, 1, w + 1);
     Atomics.notify(sabInt32, 1, 1);
   }
 }
 
-/* ---------- 启动常驻引擎（首次运行） ---------- */
-function startPersistentEngine(initialCommands) {
-  const initText = initialCommands.map(c => c + '\n').join('');
-  // 预先写入初始命令，这样 onRuntimeInitialized 后 callMain 立即有数据可读
-  if (sabAvailable) writeCommandsToSAB(initText);
+/* ---------- 启动引擎 ---------- */
+function startEngine(firstCommands) {
+  const worker = new Worker('worker.js');
+  currentWorker = worker;
 
-  ensureAssets().then(function () {
+  worker.onmessage = function (ev) {
+    const msg = ev.data;
+    if (!msg || !msg.type) return;
+    switch (msg.type) {
+      case 'debug':
+        appendLine('[调试] ' + msg.text, 'dbg');
+        break;
+      case 'stdout':
+        appendLine(msg.text, 'out');
+        break;
+      case 'stderr':
+        appendLine(msg.text, 'err');
+        break;
+      case 'ready':
+        engineReady = true;
+        btnRun.disabled = false;
+        btnRun.textContent = '开始思考';
+        overlayEl.classList.add('hidden');
+        statusEl.textContent = '引擎已就绪';
+        // 发送第一条命令（如果有的话）
+        if (firstCommands && firstCommands.length > 0) {
+          sendCommands(firstCommands);
+          firstCommands = null;
+        }
+        break;
+      case 'done':
+        btnRun.disabled = true;
+        overlayEl.classList.add('hidden');
+        statusEl.textContent = '引擎退出（code=' + msg.code + '），请刷新页面';
+        appendLine('[系统] 引擎退出（code=' + msg.code + '）', 'sys');
+        break;
+      case 'error':
+        btnRun.disabled = false;
+        overlayEl.classList.add('hidden');
+        statusEl.textContent = '引擎出错：' + msg.text;
+        appendLine('[错误] ' + msg.text, 'err');
+        break;
+    }
+  };
+  worker.onerror = function (ev) {
+    btnRun.disabled = false;
+    overlayEl.classList.add('hidden');
+    appendLine('[Worker错误] ' + ev.message, 'err');
+  };
+
+  appendLine('[系统] 正在启动引擎…', 'sys');
+  setLoadProgress(99, '正在启动引擎…');
+  worker.postMessage({
+    type: 'init',
+    wasmBinary: cachedWasmBinary,
+    engineJs: cachedJsText,
+    sab: sab,
+    sabAvailable: sabAvailable,
+    commands: []  // stdin 通过 SAB 提供
+  });
+}
+
+/* ---------- 发送 UCI 命令（对已启动的常驻引擎） ---------- */
+function sendCommands(commands) {
+  if (sabAvailable) {
+    const cmdText = commands.map(c => c + '\n').join('');
+    appendLine('[系统] 发送 ' + commands.length + ' 条 UCI 命令…', 'sys');
+    for (let i = 0; i < commands.length; i++) {
+      appendLine('[→] ' + commands[i], 'in');
+    }
+    writeCommandsToSAB(cmdText);
+    statusEl.textContent = '引擎思考中…';
+  } else {
+    // 备用模式：重新启动 Worker + 命令流
+    if (currentWorker) {
+      try { currentWorker.terminate(); } catch (e) {}
+      currentWorker = null;
+    }
+    engineReady = false;
+    overlayEl.classList.remove('hidden');
+    setLoadProgress(100, '正在启动引擎…');
     const worker = new Worker('worker.js');
     currentWorker = worker;
-
     worker.onmessage = function (ev) {
       const msg = ev.data;
       if (!msg || !msg.type) return;
-      switch (msg.type) {
-        case 'debug':
-          appendLine('[调试] ' + msg.text, 'dbg');
-          break;
-        case 'stdout':
-          appendLine(msg.text, 'out');
-          break;
-        case 'stderr':
-          appendLine(msg.text, 'err');
-          break;
-        case 'ready':
-          btnRun.disabled = false;
-          overlayEl.classList.add('hidden');
-          statusEl.textContent = '引擎已就绪，等待命令…';
-          // 首次运行的初始命令已写入 SAB，不需额外处理
-          break;
-        case 'done':
-          // 常驻模式下不会收到 done 意味着引擎退出了，通常是用户要求 quit 了。这不应该发生，除非出错。
-          btnRun.disabled = true;
-          overlayEl.classList.add('hidden');
-          statusEl.textContent = '引擎意外退出（code=' + msg.code + '），请刷新页面重试。';
-          appendLine('[系统] 引擎退出（code=' + msg.code + '）', 'sys');
-          break;
-        case 'error':
-          btnRun.disabled = false;
-          overlayEl.classList.add('hidden');
-          statusEl.textContent = '引擎出错：' + msg.text;
-          appendLine('[错误] ' + msg.text, 'err');
-          break;
+      if (msg.type === 'debug') appendLine('[调试] ' + msg.text, 'dbg');
+      else if (msg.type === 'stdout') appendLine(msg.text, 'out');
+      else if (msg.type === 'stderr') appendLine(msg.text, 'err');
+      else if (msg.type === 'ready') {
+        btnRun.disabled = false;
+        btnRun.textContent = '开始思考';
+        overlayEl.classList.add('hidden');
+        statusEl.textContent = '引擎已就绪';
+        engineReady = true;
+      } else if (msg.type === 'done') {
+        overlayEl.classList.add('hidden');
+        statusEl.textContent = '思考结束';
+        appendLine('[系统] 引擎退出（code=' + msg.code + '）', 'sys');
+        // 备用模式：引擎每次思考后退出，下一次点击需重新启动
+        currentWorker = null;
+        engineReady = false;
+      } else if (msg.type === 'error') {
+        overlayEl.classList.add('hidden');
+        appendLine('[错误] ' + msg.text, 'err');
+        currentWorker = null;
+        engineReady = false;
       }
     };
-    worker.onerror = function (ev) {
-      btnRun.disabled = false;
-      overlayEl.classList.add('hidden');
-      appendLine('[Worker错误] ' + ev.message, 'err');
-    };
-
-    appendLine('[系统] 发送 ' + initialCommands.length + ' 条 UCI 命令（引擎首次启动）…', 'sys');
-    for (let i = 0; i < initialCommands.length; i++) {
-      appendLine('[→] ' + initialCommands[i], 'in');
+    worker.onerror = function (ev) { appendLine('[Worker错误] ' + ev.message, 'err'); };
+    appendLine('[系统] 发送 ' + commands.length + ' 条 UCI 命令…', 'sys');
+    for (let i = 0; i < commands.length; i++) {
+      appendLine('[→] ' + commands[i], 'in');
     }
-
-    // 传给 Worker：wasmBinary, engineJs, sab, sabAvailable, initialCommands
     worker.postMessage({
       type: 'init',
       wasmBinary: cachedWasmBinary,
       engineJs: cachedJsText,
-      sab: sab,           // SAB（共享内存）
-      sabAvailable: sabAvailable,
-      // 如果 sabAvailable=false，退回到旧模式的命令流
-      commands: sabAvailable ? [] : initialCommands
+      sab: null,
+      sabAvailable: false,
+      commands: commands
     });
-  }).catch(function (err) {
-    btnRun.disabled = false;
-    overlayEl.classList.add('hidden');
-    appendLine('[系统错误] ' + err.message, 'err');
-    statusEl.textContent = '初始化失败：' + err.message;
-  });
+  }
 }
 
 /* ---------- 事件绑定 ---------- */
 btnRun.addEventListener('click', function () {
   const fen = fenEl.value.trim();
   const sec = parseFloat(movetimeEl.value);
-  if (!fen) { appendLine('[系统] 请先输入 FEN。', 'sys'); return; }
+  if (!fen)   { appendLine('[系统] 请先输入 FEN。', 'sys'); return; }
   if (!sec || sec <= 0) { appendLine('[系统] 请输入 > 0 的时间（秒）。', 'sys'); return; }
 
   const ms = Math.round(sec * 1000);
-  // 注意：不发送 quit，让引擎继续等待下一轮命令
   const commands = [
     'position fen ' + fen,
     'go movetime ' + ms
   ];
 
-  if (currentWorker === null) {
-    // 首次运行 — 创建引擎
+  if (!currentWorker || !engineReady) {
+    // 引擎还没启动好 — 排队等待 ready 后发送
     overlayEl.classList.remove('hidden');
-    setLoadProgress(0, '正在下载与初始化引擎…');
-    // 先预先写入 uci/isready + 命令
-    const initCmds = ['uci', 'isready'].concat(commands);
-    startPersistentEngine(initCmds);
-  } else if (sabAvailable) {
-    // 引擎已启动 — 直接写 SAB，立即生效
-    appendLine('[系统] 发送 ' + commands.length + ' 条 UCI 命令到常驻引擎…', 'sys');
-    for (let i = 0; i < commands.length; i++) {
-      appendLine('[→] ' + commands[i], 'in');
-    }
-    writeCommandsToSAB(commands.map(c => c + '\n').join(''));
-    statusEl.textContent = '引擎思考中…';
+    setLoadProgress(99, '引擎正在启动…');
+    btnRun.disabled = true;
+    btnRun.textContent = '正在启动…';
+    startEngine(commands);
   } else {
-    // 备用模式（SAB 不可用） — 重新创建 Worker
-    overlayEl.classList.remove('hidden');
-    setLoadProgress(95, '使用已缓存的 WASM 与 JS，正在启动…');
-    const initCmds = ['uci', 'isready'].concat(commands, ['quit']);
-    startPersistentEngine(initCmds);
+    // 引擎已启动 — 立即发送命令
+    sendCommands(commands);
   }
 });
 
-/* 页面首次加载：初始化 SAB，准备按钮状态 */
-window.addEventListener('load', function () {
-  const ok = tryInitSAB();
-  if (ok) {
-    appendLine('[系统] 共享内存模式：引擎将常驻，首次下载后即可持续思考。', 'sys');
-    btnRun.disabled = false;
+/* =============================================================
+ * 页面加载流程：
+ *   1. 初始化 SAB
+ *   2. 立即下载 WASM（显示加载层与进度）
+ *   3. 下载 JS
+ *   4. 启动引擎 Worker（callMain 会挂起等待命令）
+ *   5. 收到 ready 消息 — 隐藏加载层，启用按钮
+ * ============================================================= */
+window.addEventListener('load', async function () {
+  // 1. 初始化 SAB
+  if (tryInitSAB()) {
+    appendLine('[系统] 引擎常驻模式（SharedArrayBuffer 可用）', 'sys');
   } else {
-    appendLine('[系统] 回退到重启模式（SAB 不可用，浏览器未启用跨源隔离）。', 'sys');
-    btnRun.disabled = false;
+    appendLine('[系统] 引擎重启模式（SAB 不可用，每次需重启 Worker）', 'sys');
   }
-  statusEl.textContent = '已就绪，请输入 FEN 并点击「开始思考」。';
+
+  // 2. 显示覆盖层并开始下载
+  btnRun.disabled = true;
+  btnRun.textContent = '下载中…';
+  statusEl.textContent = '正在下载引擎…';
+  overlayEl.classList.remove('hidden');
+  setLoadProgress(0, '正在下载引擎二进制…');
+
+  try {
+    // 3. 下载 WASM + JS
+    cachedWasmBinary = await downloadWasmWithProgress();
+    setLoadProgress(97, '正在下载引擎 JS…');
+    cachedJsText = await downloadEngineJs();
+
+    // 4. 启动引擎 — 不发送初始命令，引擎在 SAB 上等待
+    startEngine(null);
+  } catch (err) {
+    btnRun.disabled = false;
+    btnRun.textContent = '重试下载';
+    overlayEl.classList.add('hidden');
+    appendLine('[系统错误] ' + err.message, 'err');
+    statusEl.textContent = '下载失败：' + err.message;
+  }
 });
 </script>
 </body>
