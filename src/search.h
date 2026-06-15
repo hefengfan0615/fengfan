@@ -136,15 +136,16 @@ struct RootMove {
         return m.score != score ? m.score < score : m.previousScore < previousScore;
     }
 
-    u64     effort           = 0;
-    Value   score            = -VALUE_INFINITE;
-    Value   previousScore    = -VALUE_INFINITE;
-    Value   averageScore     = -VALUE_INFINITE;
-    Value   meanSquaredScore = -VALUE_INFINITE * VALUE_INFINITE;
-    Value   uciScore         = -VALUE_INFINITE;
-    bool    scoreLowerbound  = false;
-    bool    scoreUpperbound  = false;
-    int     selDepth         = 0;
+    u64     effort             = 0;
+    Value   score              = -VALUE_INFINITE;
+    Value   previousScore      = -VALUE_INFINITE;
+    Value   averageScore       = -VALUE_INFINITE;
+    Value   meanSquaredScore   = -VALUE_INFINITE * VALUE_INFINITE;
+    Value   uciScore           = -VALUE_INFINITE;
+    bool    scoreLowerbound    = false;
+    bool    scoreUpperbound    = false;
+    bool    previousScoreExact = false;
+    int     selDepth           = 0;
     PVMoves pv, previousPV;
 };
 
@@ -304,11 +305,11 @@ class Worker {
     LowPlyHistory    lowPlyHistory;
 
     CapturePieceToHistory           captureHistory;
-    ContinuationHistory             continuationHistory[2][2];
     CorrectionHistory<Continuation> continuationCorrectionHistory;
 
     TTMoveHistory    ttMoveHistory;
     SharedHistories& sharedHistory;
+    ContinuationHistory (&continuationHistory)[2][2];
 
    private:
     bool iterative_deepening();
@@ -343,7 +344,7 @@ class Worker {
 
     LimitsType limits;
 
-    size_t             pvIdx, pvLast;
+    usize              pvIdx, pvLast;
     RelaxedAtomic<u64> nodes, bestMoveChanges;
     int                selDepth, nmpMinPly;
 

@@ -41,9 +41,6 @@ namespace Stockfish::Eval::NNUE::Features {
 // position of pieces. Position mirrored such that king is always on d..e files.
 class HalfKAv2_hm {
    public:
-    // Feature name
-    static constexpr const char* Name = "HalfKAv2_hm(Friend)";
-
     // Hash value embedded in the evaluation file
     static constexpr u32 HashValue = 0x7f234cb8u;
 
