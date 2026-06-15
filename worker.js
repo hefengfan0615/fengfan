@@ -1,41 +1,31 @@
 /* ======================================================================
  *  Pikafish WASM Engine Worker
  *
- *  关键思路：
- *    在宿主端 test.html 中下载 WASM 和 JS，通过 postMessage 将
- *    ArrayBuffer 和 JS 源码、以及 UCI 命令数组发送到本 Worker。
+ *  关键发现：
+ *    WebAssembly.instantiate(arrayBuffer, imports) 返回 Promise，
+ *    因此 WASM 的实例化是**异步**的。importScripts 返回时，
+ *    WASM 还没有 ready，__emscripten_stack_alloc / callMain / _main
+ *    等 WASM 导出函数还不可用。
  *
- *  本 Worker 的执行流程：
- *    1. 构建 self.Module，包含：
- *         - wasmBinary       : WASM 二进制（ArrayBuffer）
- *         - stdin            : 每次读一个字节的回调
- *         - stdout / stderr  : 不设置（保留 FS 层的默认流）
- *         - print / printErr : 每行回调（引擎真正调用的输出）
- *         - noInitialRun=true: 让 pikafish.js 初始化完不立即 callMain
- *         - onRuntimeInitialized, onExit, onAbort
- *       【不设置 setStatus】—— 这样 doRun 同步执行，
- *       initRuntime / FS.init / onRuntimeInitialized 都会在
- *       importScripts 返回前被调用。
+ *  Emscripten 的异步初始化流程：
+ *    createWasm()                  : 启动异步实例化
+ *    run()                         : 发现 runDependencies>0，暂存自己
+ *    → importScripts 返回
+ *    (等待浏览器)
+ *    WASM 实例化完成               : runDependencies-- → dependenciesFulfilled()
+ *    → doRun()                     : initRuntime → preMain
+ *                                  → onRuntimeInitialized ★
+ *                                  → 若 noInitialRun=false 则 callMain
+ *                                  → postRun
  *
- *    2. importScripts(jsUrl) → 同步执行 pikafish.js
- *         - createWasm()     ：实例化 WASM（wasmBinary 已存在，同步）
- *         - run() / doRun()  ：initRuntime() → FS.init 使用 Module.stdin
- *                              → onRuntimeInitialized
- *                              → noInitialRun=true，跳过 callMain
+ *  正确做法：把 callMain 放到 onRuntimeInitialized 里执行。
  *
- *    3. importScripts 返回，我们手动调用 callMain()
- *         → _main → UCI 循环 → FS 读取 /dev/stdin → createDevice 的
- *           read 方法 → 调用 stdinByte() → 返回命令行字节 ✓
- *         → print("uciok")  → 我们的 stdout 回调
- *         → 读到 "quit\n" → main 返回 → exitJS → onExit(code)
- *
- *  通信协议（Engine → Host）：
- *    { type: 'stdout', text: string }
- *    { type: 'stderr', text: string }
- *    { type: 'debug',  text: string }
- *    { type: 'ready' }
- *    { type: 'done',   code: number }
- *    { type: 'error',  text: string }
+ *  stdin 路径：
+ *    Module["stdin"] = stdinByte   : 非 null
+ *    → FS.createStandardStreams() 走 FS.createDevice("/dev","stdin",input)
+ *    → registerDevice({ open, close, read, write })
+ *    → read 循环：调用 input() 即 stdinByte() 一个字节一个字节返回
+ *    → EOF：return null
  * ====================================================================== */
 
 "use strict";
@@ -76,7 +66,7 @@ self.onmessage = function(ev) {
     /* 步骤 1: 构建 self.Module */
     try {
         self.Module = {
-            noInitialRun:  true,    // ★★ 关键：暂不 callMain
+            noInitialRun:  true,     // ★ doRun 中不自动 callMain
             noExitRuntime: false,
             arguments:     [],
             wasmBinary:    wasmBinary,
@@ -87,8 +77,26 @@ self.onmessage = function(ev) {
         self.Module["stdout"] = null;
         self.Module["stderr"] = null;
         self.Module["onRuntimeInitialized"] = function() {
-            debug("onRuntimeInitialized: runtime 已初始化");
+            debug("onRuntimeInitialized: runtime 已初始化，启动 callMain");
             postMsg({ type: 'ready' });
+            // ★★ 在 onRuntimeInitialized 中调用 callMain
+            try {
+                if (typeof callMain === 'function') {
+                    callMain([]);
+                } else if (self.Module && typeof self.Module.callMain === 'function') {
+                    self.Module.callMain([]);
+                } else if (typeof _main === 'function') {
+                    _main(0, 0);
+                } else {
+                    postMsg({ type: 'error',
+                              text: "无法找到 callMain / _main 函数" });
+                    return;
+                }
+                debug("callMain() 返回 —— 引擎执行完毕");
+            } catch (e) {
+                debug("callMain 异常: " + e.message);
+                postMsg({ type: 'error', text: "callMain 失败: " + e.message });
+            }
         };
         self.Module["onExit"] = function(code) {
             debug("onExit: code=" + code);
@@ -98,50 +106,28 @@ self.onmessage = function(ev) {
             debug("onAbort: " + what);
             postMsg({ type: 'error', text: "onAbort: " + String(what) });
         };
-        // 注意：【不设置 Module["setStatus"]】，否则 doRun 会通过 setTimeout
-        // 异步执行，导致 initRuntime 不在 importScripts 中完成。
-        debug("Module 已构建（noInitialRun=true，不设置 setStatus）");
+        // 不设置 Module["setStatus"]，让 doRun 在同步路径中尽量被调度
+        debug("Module 已构建（noInitialRun=true，callMain 在 onRuntimeInitialized 中）");
     } catch (e) {
         postMsg({ type: 'error', text: "构建 Module 失败: " + e.message });
         return;
     }
 
-    /* 步骤 2: 同步加载并执行 pikafish.js */
+    /* 步骤 2: importScripts 加载 pikafish.js —— 同步执行脚本主体，
+     * 但 createWasm 的 WASM 实例化是异步的。onRuntimeInitialized 会
+     * 在稍后（WASM ready 后）被触发。
+     */
     try {
         var jsBlob = new Blob([engineJs], { type: "application/javascript" });
         var jsUrl  = URL.createObjectURL(jsBlob);
         debug("开始 importScripts 加载 pikafish.js (Blob URL)");
         importScripts(jsUrl);
         URL.revokeObjectURL(jsUrl);
-        debug("pikafish.js 执行完毕（已跳过自动 callMain）");
+        debug("pikafish.js 脚本主体执行完毕，等待 WASM 异步实例化…");
     } catch (e) {
         postMsg({ type: 'error', text: "pikafish.js 加载失败: " + e.message });
         return;
     }
-
-    /* 步骤 3: 手动调用 callMain —— 引擎开始执行 C++ 主循环 */
-    try {
-        if (typeof callMain === 'function') {
-            debug("调用 callMain() 启动引擎…");
-            callMain([]);
-            debug("callMain() 返回");
-        } else if (self.Module && typeof self.Module.callMain === 'function') {
-            debug("通过 Module.callMain() 启动引擎");
-            self.Module.callMain([]);
-        } else if (typeof _main === 'function') {
-            debug("通过 _main() 启动引擎");
-            _main(0, 0);
-        } else {
-            postMsg({ type: 'error',
-                      text: "无法找到 callMain / _main 函数" });
-            return;
-        }
-    } catch (e) {
-        debug("callMain 异常: " + e.message);
-        postMsg({ type: 'error', text: "callMain 失败: " + e.message });
-    }
-
-    debug("Worker 执行完成");
 };
 
 debug("worker.js 加载完成，等待宿主端 init 消息...");
