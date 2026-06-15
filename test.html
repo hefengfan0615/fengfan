@@ -385,14 +385,16 @@ function workerSourceTemplate() {
 
 /* =============================================================
  * 启动一个引擎 Worker
- *   commands        : 本次要发送给 UCI 的命令数组
- *   silentInit      : 是否把加载覆盖层限制为"极简"提示
- *                     （也就是有缓存 WASM 的情况）
  * ============================================================= */
+function getWasmAbsoluteBase() {
+  // 从当前页面 URL 计算 "wasm/" 目录的绝对 URL
+  // 注意：Blob Worker 没有页面 origin，所以必须在这里预拼好
+  var path = location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
+  return location.origin + path + 'wasm/';
+}
+
 function spawnEngineWorker(commands, silentInit) {
-  // 计算 wasm 目录相对于当前页面的路径
-  // test.html 与 wasm/ 在同一目录：./wasm/pikafish.js
-  var wasmBase = 'wasm/';
+  var wasmBase = getWasmAbsoluteBase();
 
   var blob = new Blob([workerSourceTemplate()], { type: 'application/javascript' });
   var blobUrl = URL.createObjectURL(blob);
