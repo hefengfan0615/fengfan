@@ -94,12 +94,12 @@
     background: #fff;
     padding: 28px 32px;
     border-radius: 12px;
-    width: 340px;
+    width: 360px;
     box-shadow: 0 20px 50px rgba(0,0,0,.25);
     text-align: center;
   }
   .loader h2 { margin: 0 0 10px; font-size: 17px; color: #2d3a5f; }
-  .loader p  { margin: 0 0 14px; font-size: 13px; color: #64748b; }
+  .loader p  { margin: 0 0 14px; font-size: 13px; color: #64748b; min-height: 20px; }
   .bar {
     width: 100%; height: 10px; background: #eef1f8;
     border-radius: 99px; overflow: hidden;
@@ -118,9 +118,8 @@
 <div class="container">
   <h1>🧠 Pikafish WASM 引擎测试</h1>
   <div class="desc">
-    输入 FEN 与思考时间（秒），点击「开始思考」。引擎以原生 UCI 协议
-    （stdin / stdout）通信，输出将实时追加到下方文本框。WASM 只加载一次
-    （后续重启复用缓存的 wasmBinary）。
+    输入 FEN 与思考时间（秒），点击「开始思考」。引擎以原生 UCI 协议（stdin / stdout）通信，
+    输出将实时追加到下方文本框。WASM 二进制只在首次访问时下载，后续复用内存缓存。
   </div>
 
   <div class="card">
@@ -161,32 +160,12 @@
 </div>
 
 <script>
-/* =============================================================
- * 宿主端 (主线程) 负责 UI、管理 Worker、维护 WASM 缓存
- *
- * 方案概述：
- *   由于 Pikafish 为单线程、在 UCI 循环里同步读取 stdin，
- *   我们把引擎放进一个 Web Worker 中，这样不会阻塞 UI。
- *   同时也保证了「引擎以原生方式运行」。
- *
- *   stdin 的解决思路：
- *     - 进入 _main() 之前，把本次要执行的命令文本准备好；
- *     - Module["stdin"] = () => 每次读一个字节，读完全部
- *       字节后返回 null（EOF），引擎随即退出。
- *     - Module["print"] / Module["printErr"] 回调把每行
- *       stdout 通过 postMessage 回传给宿主显示。
- *
- *   WASM 只加载一次：
- *     - 首次：Worker 里 fetch + ReadableStream 显示进度，
- *       再通过 Transferable List 把 wasmBinary 传回宿主缓存；
- *     - 下一次点击「开始思考」：宿主直接把缓存 wasmBinary 随
- *       init 消息传给新的 Worker，跳过 fetch。
- *
- *   加载覆盖层：
- *     - 页面初次打开时，我们展示一个 0% → 100% 的进度覆盖层；
- *     - 点击「开始思考」按钮仅复用缓存的 WASM，短暂显示一次
- *       "Running..." 然后隐藏。
- * ============================================================= */
+/* ===========================================================
+   宿主端（主线程）
+   - 下载 WASM 并显示精确的进度百分比
+   - 启动/销毁 Worker 来跑引擎
+   - 显示引擎输出 + 命令回显
+   =========================================================== */
 
 const outputEl   = document.getElementById('output');
 const statusEl   = document.getElementById('status');
@@ -199,6 +178,11 @@ const btnClear   = document.getElementById('btnClear');
 const fenEl      = document.getElementById('fen');
 const movetimeEl = document.getElementById('movetime');
 
+let cachedWasmBinary = null;  // Uint8Array：WASM 二进制缓存（WASM 只加载一次）
+let cachedJsText    = null;   // string：pikafish.js 文本缓存
+let currentWorker   = null;
+
+/* ---------- DOM 辅助 ---------- */
 function appendLine(text, cls) {
   const span = document.createElement('span');
   if (cls) span.className = cls;
@@ -208,29 +192,293 @@ function appendLine(text, cls) {
 }
 
 function setLoadProgress(percent, text) {
-  if (text) loadMsgEl.textContent = text;
-  const p = Math.max(0, Math.min(100, percent | 0));
-  loadBarEl.style.width = p + '%';
-  loadPctEl.textContent = p + '%';
+  // 范围裁剪，NaN 容错
+  const p = Number(percent);
+  if (!isFinite(p) || p < 0) {
+    // 未知进度：不更新百分比数字
+  } else {
+    const clamped = Math.min(100, Math.floor(p));
+    loadBarEl.style.width = clamped + '%';
+    loadPctEl.textContent = clamped + '%';
+  }
+  if (text !== undefined && text !== null && text !== '') {
+    loadMsgEl.textContent = text;
+  }
 }
 
 btnClear.addEventListener('click', () => {
   outputEl.textContent = '';
 });
 
-/* ---------- WASM 缓存（实现 "WASM 只加载一次"） ---------- */
-let cachedWasmBinary = null;
+/* ---------- 绝对 URL 计算 ---------- */
+function getWasmAbsoluteBase() {
+  const path = location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
+  return location.origin + path + 'wasm/';
+}
 
-/* ---------- 当前 Worker ---------- */
-let currentWorker = null;
+/* ---------- 宿主端下载 WASM + 进度 ---------- */
+async function downloadWasmWithProgress(wasmBase) {
+  const wasmUrl = wasmBase + 'pikafish.wasm';
+  const resp = await fetch(wasmUrl);
+  if (!resp.ok) throw new Error('下载失败：HTTP ' + resp.status);
 
-/* ---------- 页面首次加载：只跑一次空命令来下载/缓存 WASM ---------- */
-window.addEventListener('load', () => {
-  // 启动一个不跑命令的 Worker，只加载 WASM，方便后续复用
-  spawnEngineWorker([], /*silentInit=*/false);
-});
+  const total = parseInt(resp.headers.get('content-length') || '0', 10);
+  if (!resp.body) {
+    // 回退：浏览器不支持 streaming body，一次性读
+    const ab = await resp.arrayBuffer();
+    setLoadProgress(100, '下载完成');
+    return new Uint8Array(ab);
+  }
 
-/* ---------- 点击「开始思考」 ---------- */
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let received = 0;
+  while (true) {
+    const r = await reader.read();
+    if (r.done) break;
+    chunks.push(r.value);
+    received += r.value.length;
+
+    let pct;
+    let msg;
+    if (total > 0) {
+      pct = (received / total) * 100;
+      msg = '下载引擎 ' + (received / 1024 / 1024).toFixed(1) + 'MB / '
+          + (total / 1024 / 1024).toFixed(1) + 'MB';
+    } else {
+      pct = NaN;
+      msg = '下载引擎 ' + (received / 1024 / 1024).toFixed(1) + 'MB / 未知';
+    }
+    setLoadProgress(pct, msg);
+  }
+
+  // 组装 Uint8Array（总长度已知）
+  const result = new Uint8Array(received);
+  let off = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    result.set(chunks[i], off);
+    off += chunks[i].length;
+  }
+  if (total > 0) setLoadProgress(100, '下载完成，准备启动引擎…');
+  return result;
+}
+
+/* ---------- 预加载 pikafish.js 文本（同一 URL） ---------- */
+async function downloadEngineJs(wasmBase) {
+  const url = wasmBase + 'pikafish.js';
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('加载 pikafish.js 失败：HTTP ' + resp.status);
+  return await resp.text();
+}
+
+/* ============================================================
+   Worker 源码模板（作为 Blob Worker 执行）
+   initMsg = {
+     wasmBinary: Uint8Array | ArrayBuffer,   // 引擎二进制
+     engineJs:   string,                     // pikafish.js 全文
+     commands:   string[]                    // 待执行 UCI 命令行
+   }
+   ============================================================ */
+function workerSourceTemplate() {
+  return [
+    '(function(){',
+    '  "use strict";',
+    '  function post(t){ try{ self.postMessage(t); }catch(e){} }',
+    '',
+    '  function modulePrint(line) {',
+    '    if (line === undefined || line === null) return;',
+    '    post({ type: "stdout", text: String(line) });',
+    '  }',
+    '  function modulePrintErr(line) {',
+    '    if (line === undefined || line === null) return;',
+    '    post({ type: "stderr", text: String(line) });',
+    '  }',
+    '',
+    '  // stdin：一次性把所有命令行 bytes 喂给引擎，读完就返回 null(EOF)',
+    '  var commandStream = "";',
+    '  var commandPos = 0;',
+    '  function stdinByte() {',
+    '    if (commandPos >= commandStream.length) return null;',
+    '    var ch = commandStream.charCodeAt(commandPos++);',
+    '    return ch;',
+    '  }',
+    '',
+    '  function prepareModule(wasmBinary) {',
+    '    var Module = {',
+    '      noInitialRun: false,',
+    '      noExitRuntime: true,',
+    '      arguments: [],',
+    '      print:    modulePrint,',
+    '      printErr: modulePrintErr,',
+    '      wasmBinary: wasmBinary,',
+    '    };',
+    '    Module["stdin"]  = stdinByte;',
+    '    Module["stdout"] = function (c) { return 0; };',
+    '    Module["stderr"] = function (c) { return 0; };',
+    '    Module["onExit"] = function (code) {',
+    '      post({ type: "done", code: code });',
+    '    };',
+    '    Module["onAbort"] = function (reason) {',
+    '      post({ type: "error", text: String(reason) });',
+    '    };',
+    '    Module["onRuntimeInitialized"] = function () {',
+    '      post({ type: "ready" });',
+    '    };',
+    '    Module["setStatus"] = function (text) {',
+    '      // 引擎内部 "Running..." 之类的状态，直接忽略避免干扰进度条',
+    '    };',
+    '    return Module;',
+    '  }',
+    '',
+    '  self.onmessage = function (ev) {',
+    '    var m = ev.data;',
+    '    if (!m || m.type !== "init") return;',
+    '',
+    '    // 1) 命令流：每行末尾加 \\n，UCI 按行读取',
+    '    var cmds = Array.isArray(m.commands) ? m.commands.slice() : [];',
+    '    commandStream = cmds.map(function(s){ return s + "\\n"; }).join("");',
+    '    commandPos = 0;',
+    '',
+    '    // 2) 准备 Module（含 wasmBinary + stdin/stdout 回调）',
+    '    try {',
+    '      self.Module = prepareModule(m.wasmBinary);',
+    '    } catch (e) {',
+    '      post({ type: "error", text: "prepareModule failed: " + String(e && e.message ? e.message : e) });',
+    '      return;',
+    '    }',
+    '',
+    '    // 3) 用 Blob URL + importScripts 同步执行 pikafish.js，',
+    '    //    让它在 Worker 全局作用域执行，这样它首行能读到 self.Module，',
+    '    //    进而读取 wasmBinary、stdin、print 等配置，完成 createWasm + callMain。',
+    '    try {',
+    '      var jsBlob = new Blob([m.engineJs], { type: "application/javascript" });',
+    '      var jsUrl = URL.createObjectURL(jsBlob);',
+    '      importScripts(jsUrl);',
+    '      URL.revokeObjectURL(jsUrl);',
+    '    } catch (e) {',
+    '      post({ type: "error", text: "engine.js failed: " + String(e && e.message ? e.message : e) });',
+    '    }',
+    '  };',
+    '})();'
+  ].join('\n');
+}
+
+/* ============================================================
+   启动一次引擎运行（所有点击 / 首次加载的统一入口）
+   ============================================================ */
+function runEngine(commands, silentInit) {
+  // 终止上一个 Worker（如果还在跑）
+  if (currentWorker) {
+    try { currentWorker.terminate(); } catch (e) {}
+    currentWorker = null;
+  }
+
+  const wasmBase = getWasmAbsoluteBase();
+
+  // 显示进度条（除非是缓存复用的极简模式）
+  overlayEl.classList.remove('hidden');
+  if (cachedWasmBinary && cachedJsText) {
+    setLoadProgress(90, '使用已缓存的 WASM，正在启动…');
+  } else {
+    setLoadProgress(0, '正在下载 WASM…');
+  }
+
+  // 启动异步准备：(1) 下载或读取缓存 (2) 启动 Worker 并注入
+  (async () => {
+    try {
+      // --- 1) 缓存 WASM（整个文件下载过一次即可） ---
+      if (!cachedWasmBinary) {
+        cachedWasmBinary = await downloadWasmWithProgress(wasmBase);
+      }
+      // --- 2) 缓存 pikafish.js 文本（Worker 中通过 new Function 直接 eval） ---
+      if (!cachedJsText) {
+        setLoadProgress(98, '读取引擎运行时…');
+        cachedJsText = await downloadEngineJs(wasmBase);
+      }
+      setLoadProgress(100, '启动引擎…');
+
+      // --- 3) 创建 Worker，把二进制 + 命令发过去 ---
+      const blob = new Blob([workerSourceTemplate()], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+      const worker = new Worker(blobUrl);
+      currentWorker = worker;
+
+      let finished = false;
+      let lastProgressShown = true;
+
+      worker.onmessage = function (ev) {
+        const msg = ev.data;
+        if (!msg || !msg.type) return;
+        switch (msg.type) {
+          case 'ready':
+            // 引擎 runtime 初始化完成（main 也已开始执行）
+            btnRun.disabled = false;
+            statusEl.textContent = '引擎运行中…';
+            // 运行开始：隐藏进度覆盖层（输出会直接追加到 output-box）
+            overlayEl.classList.add('hidden');
+            lastProgressShown = false;
+            break;
+          case 'stdout':
+            appendLine(msg.text, 'out');
+            break;
+          case 'stderr':
+            appendLine(msg.text, 'err');
+            break;
+          case 'done':
+            finished = true;
+            btnRun.disabled = false;
+            statusEl.textContent = '思考结束。可再次输入 FEN 并点击「开始思考」。';
+            appendLine('[系统] 引擎退出（WASM 已加载一次，下次点击跳过下载）。', 'sys');
+            overlayEl.classList.add('hidden');
+            break;
+          case 'error':
+            finished = true;
+            btnRun.disabled = false;
+            appendLine('[错误] ' + msg.text, 'err');
+            statusEl.textContent = '引擎出错：' + msg.text;
+            overlayEl.classList.add('hidden');
+            break;
+        }
+      };
+
+      worker.onerror = function (ev) {
+        finished = true;
+        btnRun.disabled = false;
+        appendLine('[Worker错误] ' + ev.message, 'err');
+        overlayEl.classList.add('hidden');
+      };
+
+      // 把两份"拷贝"发送给 Worker（避免 Transferable 导致的 detach 问题）
+      // - Uint8Array 通过 structured clone 自动拷贝；wasmBinary 大文件，
+      //   直接 postMessage 拷贝即可，速度不慢。
+      const engineMsg = {
+        type: 'init',
+        wasmBinary: cachedWasmBinary,
+        engineJs:   cachedJsText,
+        commands:   commands
+      };
+      worker.postMessage(engineMsg);
+
+      // 安全兜底：若引擎在 1 秒内未发送 ready/done/error，
+      // 也把进度条挪到 100% 并切换到「运行中」状态，便于后续调错
+      setTimeout(function () {
+        if (!finished && lastProgressShown) {
+          overlayEl.classList.add('hidden');
+          statusEl.textContent = '引擎运行中…';
+        }
+      }, 1500);
+    } catch (err) {
+      btnRun.disabled = false;
+      appendLine('[错误] ' + (err && err.message ? err.message : err), 'err');
+      statusEl.textContent = '初始化失败：' + (err && err.message ? err.message : err);
+      overlayEl.classList.add('hidden');
+    }
+  })();
+}
+
+/* ============================================================
+   事件绑定
+   ============================================================ */
 btnRun.addEventListener('click', () => {
   const fen = fenEl.value.trim();
   const sec = parseFloat(movetimeEl.value);
@@ -238,7 +486,6 @@ btnRun.addEventListener('click', () => {
   if (!sec || sec <= 0) { appendLine('[系统] 请输入 > 0 的时间（秒）。', 'sys'); return; }
 
   const ms = Math.round(sec * 1000);
-  // UCI 命令顺序：先握手、position 设初始局面、go movetime、quit
   const commands = [
     'uci',
     'isready',
@@ -250,233 +497,14 @@ btnRun.addEventListener('click', () => {
   // 回显命令（绿色）
   commands.forEach(function (c) { appendLine('[→] ' + c, 'in'); });
 
-  if (currentWorker) {
-    try { currentWorker.terminate(); } catch (e) {}
-    currentWorker = null;
-  }
-  spawnEngineWorker(commands, /*silentInit=*/true);
+  runEngine(commands, /*silentInit=*/ true);
 });
 
-/* =============================================================
- * 构造 Worker 源码 + 启动 Worker
- * ============================================================= */
-function workerSourceTemplate() {
-  // 返回一个函数体字符串，内部使用 initMsg.{wasmBase, wasmBinary, commands}
-  // 注意：此字符串中包含 ${...} 是 Emscripten 注入点所需的 *宿主端* 模板，
-  // 为避免与 test.html 的模板字面量冲突，这里使用字符串拼接。
-  return [
-    '(function(){',
-    '  "use strict";',
-    '  var initMsg = null;',
-    '  var commandStream = "";',
-    '  var commandPos = 0;',
-    '  function post(t){ try{ self.postMessage(t); }catch(e){} }',
-    '',
-    '  async function fetchWasmWithProgress(url) {',
-    '    var resp = await fetch(url);',
-    '    if (!resp.ok) throw new Error("fetch wasm failed: " + resp.status);',
-    '    var total = parseInt(resp.headers.get("content-length") || "0", 10);',
-    '    var reader = resp.body.getReader();',
-    '    var chunks = [];',
-    '    var received = 0;',
-    '    while (true) {',
-    '      var r = await reader.read();',
-    '      if (r.done) break;',
-    '      chunks.push(r.value);',
-    '      received += r.value.length;',
-    '      var pct = total ? Math.round((received / total) * 100) : 0;',
-    '      var mb1 = (received / 1024 / 1024).toFixed(1);',
-    '      var mb2 = total ? (total / 1024 / 1024).toFixed(1) + "MB" : "未知";',
-    '      post({ type: "loadProgress", percent: pct, text: "下载引擎 " + mb1 + "MB / " + mb2 });',
-    '    }',
-    '    var ab = new Uint8Array(received);',
-    '    var off = 0;',
-    '    for (var i = 0; i < chunks.length; i++) { ab.set(chunks[i], off); off += chunks[i].length; }',
-    '    return ab.buffer;',
-    '  }',
-    '',
-    '  function modulePrint(line) {',
-    '    if (line === undefined || line === null) return;',
-    '    post({ type: "stdout", text: String(line) });',
-    '  }',
-    '  function modulePrintErr(line) {',
-    '    if (line === undefined || line === null) return;',
-    '    post({ type: "stderr", text: String(line) });',
-    '  }',
-    '  function stdinByte() {',
-    '    if (commandPos >= commandStream.length) return null;',
-    '    var ch = commandStream.charCodeAt(commandPos++);',
-    '    return ch;',
-    '  }',
-    '',
-    '  function makeModule(wasmBinary) {',
-    '    var Module = {',
-    '      noInitialRun: false,',
-    '      noExitRuntime: true,',
-    '      arguments: [],',
-    '      print: modulePrint,',
-    '      printErr: modulePrintErr,',
-    '      wasmBinary: wasmBinary,',
-    '      setStatus: function (text) {',
-    '        if (!text) return;',
-    '        post({ type: "loadProgress", percent: 95, text: text });',
-    '      },',
-    '    };',
-    '    Module["stdin"] = stdinByte;',
-    '    Module["stdout"] = function (c) { return 0; };',
-    '    Module["stderr"] = function (c) { return 0; };',
-    '    Module["onExit"] = function (code) {',
-    '      post({ type: "done", code: code });',
-    '    };',
-    '    Module["onRuntimeInitialized"] = function () {',
-    '      post({ type: "ready" });',
-    '    };',
-    '    return Module;',
-    '  }',
-    '',
-    '  self.onmessage = async function (ev) {',
-    '    var m = ev.data;',
-    '    if (!m || m.type !== "init") return;',
-    '    initMsg = m;',
-    '',
-    '    // 准备 stdin 文本（命令一行一个，末尾加换行，EOF 时返回 null）',
-    '    var cmdLines = Array.isArray(initMsg.commands) ? initMsg.commands.slice() : [];',
-    '    commandStream = cmdLines.map(function (s) { return s + "\\n"; }).join("");',
-    '    commandPos = 0;',
-    '',
-    '    var wasmBase = initMsg.wasmBase || "./";',
-    '    var wasmUrl = wasmBase + "pikafish.wasm";',
-    '    var wasmBinary;',
-    '    if (initMsg.wasmBinary) {',
-    '      wasmBinary = initMsg.wasmBinary;',
-    '      post({ type: "loadProgress", percent: 90, text: "使用已缓存的 WASM" });',
-    '    } else {',
-    '      try {',
-    '        wasmBinary = await fetchWasmWithProgress(wasmUrl);',
-    '        // 回传给宿主：下次重启直接用缓存',
-    '        try {',
-    '          post({ type: "cacheWasm", binary: wasmBinary }, [wasmBinary]);',
-    '        } catch (e1) {',
-    '          try {',
-    '            var u8 = new Uint8Array(wasmBinary);',
-    '            var copyBuf = new ArrayBuffer(u8.byteLength);',
-    '            new Uint8Array(copyBuf).set(u8);',
-    '            post({ type: "cacheWasm", binary: copyBuf }, [copyBuf]);',
-    '          } catch (e2) { /* 忽略 transfer 失败，下次再 fetch 即可 */ }',
-    '        }',
-    '      } catch (err) {',
-    '        post({ type: "error", text: String(err && err.message ? err.message : err) });',
-    '        return;',
-    '      }',
-    '    }',
-    '',
-    '    // 将 Module 挂到全局，让 pikafish.js 自动读取',
-    '    self.Module = makeModule(wasmBinary);',
-    '',
-    '    try {',
-    '      self.importScripts(wasmBase + "pikafish.js");',
-    '    } catch (err) {',
-    '      post({ type: "error", text: "importScripts failed: " + String(err && err.message ? err.message : err) });',
-    '    }',
-    '  };',
-    '})();'
-  ].join('\n');
-}
-
-/* =============================================================
- * 启动一个引擎 Worker
- * ============================================================= */
-function getWasmAbsoluteBase() {
-  // 从当前页面 URL 计算 "wasm/" 目录的绝对 URL
-  // 注意：Blob Worker 没有页面 origin，所以必须在这里预拼好
-  var path = location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
-  return location.origin + path + 'wasm/';
-}
-
-function spawnEngineWorker(commands, silentInit) {
-  var wasmBase = getWasmAbsoluteBase();
-
-  var blob = new Blob([workerSourceTemplate()], { type: 'application/javascript' });
-  var blobUrl = URL.createObjectURL(blob);
-  var worker = new Worker(blobUrl);
-  currentWorker = worker;
-
-  var initializing = !cachedWasmBinary;
-  if (!silentInit || initializing) {
-    overlayEl.classList.remove('hidden');
-    setLoadProgress(0, initializing ? '正在初始化，下载引擎…' : '启动引擎实例…');
-  }
-
-  worker.onmessage = function (ev) {
-    var msg = ev.data;
-    if (!msg || !msg.type) return;
-    switch (msg.type) {
-      case 'loadProgress':
-        setLoadProgress(msg.percent, msg.text);
-        break;
-      case 'cacheWasm':
-        // 缓存 WASM 二进制，后续直接复用
-        cachedWasmBinary = msg.binary;
-        break;
-      case 'ready':
-        // 引擎 runtime 初始化完成（已开始跑 main() 的 UCI 循环）
-        btnRun.disabled = false;
-        statusEl.textContent = cachedWasmBinary ? '引擎已就绪（WASM 已加载一次，后续复用缓存）。' : '引擎正在启动…';
-        // 准备好的时刻隐藏加载层（如果是"纯初始化"加载还需等待引擎把命令执行完）
-        break;
-      case 'stdout':
-        appendLine(msg.text, 'out');
-        break;
-      case 'stderr':
-        appendLine(msg.text, 'err');
-        break;
-      case 'done':
-        // 引擎执行完所有命令并退出
-        overlayEl.classList.add('hidden');
-        btnRun.disabled = false;
-        statusEl.textContent = '思考结束。可再次输入 FEN 并点击「开始思考」。';
-        appendLine('[系统] 引擎退出。', 'sys');
-        break;
-      case 'error':
-        appendLine('[错误] ' + msg.text, 'err');
-        overlayEl.classList.add('hidden');
-        btnRun.disabled = false;
-        statusEl.textContent = '引擎出错：' + msg.text;
-        break;
-    }
-  };
-
-  worker.onerror = function (ev) {
-    appendLine('[Worker错误] ' + ev.message, 'err');
-    overlayEl.classList.add('hidden');
-    btnRun.disabled = false;
-  };
-
-  // 给 Worker 发送 init 消息：带 wasmBase、可选缓存的 wasmBinary、commands
-  var initMsg = {
-    type: 'init',
-    wasmBase: wasmBase,
-    commands: commands
-  };
-  if (cachedWasmBinary) {
-    // 直接把缓存二进制转移给 Worker（Transferable）
-    try {
-      initMsg.wasmBinary = cachedWasmBinary;
-      worker.postMessage(initMsg, [cachedWasmBinary]);
-      // Transfer 后本地引用失效，但我们还持有一份：
-      // 为了下一次仍能复用，做一次拷贝保留在内存
-      var u8 = new Uint8Array(cachedWasmBinary);
-      var copyBuf = new ArrayBuffer(u8.byteLength);
-      new Uint8Array(copyBuf).set(u8);
-      cachedWasmBinary = copyBuf;
-    } catch (e) {
-      // Transfer 失败就回退：下次再 fetch
-      worker.postMessage(initMsg);
-    }
-  } else {
-    worker.postMessage(initMsg);
-  }
-}
+/* 页面首次加载：直接启动一次（空命令 = 引擎初始化 + 立刻 EOF 退出），
+   目的是让 WASM 和 JS 都下载好，用户点击"开始思考"时无需再等。 */
+window.addEventListener('load', () => {
+  runEngine([], /*silentInit=*/ false);
+});
 </script>
 </body>
 </html>
