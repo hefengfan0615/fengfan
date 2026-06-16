@@ -30,7 +30,7 @@
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
   .field.fen { flex: 1 1 100%; }
   label { font-size: 13px; color: #475569; font-weight: 600; }
-  input[type="text"], input[type="number"] {
+  input[type="text"], input[type="number"], textarea {
     font: inherit;
     padding: 9px 11px;
     border: 1px solid #cbd2e0;
@@ -40,11 +40,12 @@
     transition: border-color .15s, box-shadow .15s;
     width: 100%;
   }
-  input[type="text"]:focus, input[type="number"]:focus {
+  input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
     border-color: #4f7cff;
     box-shadow: 0 0 0 3px rgba(79,124,255,.18);
     background: #fff;
   }
+  textarea { resize: vertical; min-height: 70px; font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; }
   .btn {
     padding: 9px 16px;
     border: none;
@@ -104,6 +105,29 @@
     transition: width .2s ease;
   }
   .percent { margin-top: 10px; font-weight: 700; color: #2d3a5f; font-variant-numeric: tabular-nums; }
+  .update-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: #2d3a5f;
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    display: none;
+    align-items: center;
+    gap: 14px;
+    z-index: 10000;
+    font-size: 14px;
+  }
+  .update-banner.show { display: flex; }
+  .update-banner .btn { padding: 6px 14px; font-size: 13px; }
+  .update-banner .close {
+    background: transparent; color: #cbd5e1; border: none; cursor: pointer;
+    font-size: 18px; line-height: 1; padding: 0 4px;
+  }
+  .update-banner .close:hover { color: #fff; }
 </style>
 </head>
 <body>
@@ -111,7 +135,9 @@
   <h1>Pikafish WASM 引擎测试</h1>
   <div class="desc">
     输入 FEN 与思考时间（秒），点击「开始思考」。引擎在首次使用中以原生 UCI 协议（stdin / stdout）通信，
-    输出将实时追加到下方文本框。WASM 二进制与引擎 JS 文本仅在首次访问时下载，后续复用缓存，引擎常驻。
+    输出将实时追加到下方文本框。本页面使用 Service Worker 缓存引擎资源，断网仍可使用；
+    当服务器上的 WASM/JS 更新时，会自动检测并提示刷新。
+    如需直接发送 UCI 命令，可填写「UCI 命令」栏（填写后跳过 FEN 路径，按行逐条发送）。
   </div>
 
   <div class="card">
@@ -120,6 +146,15 @@
         <label for="fen">FEN</label>
         <input id="fen" type="text"
                value="rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div class="field fen">
+        <label for="moves">UCI 命令（可选，按行填写；填写后将直接发送这些命令，不执行 FEN 命令）</label>
+        <textarea id="moves" rows="3" placeholder="uci
+isready
+position startpos moves e2e4
+go movetime 3000"></textarea>
       </div>
     </div>
     <div class="row" style="margin-top:12px;">
@@ -134,6 +169,10 @@
       <div class="field" style="min-width:140px;">
         <label>&nbsp;</label>
         <button id="btnClear" class="btn secondary">清空输出</button>
+      </div>
+      <div class="field" style="min-width:140px;">
+        <label>&nbsp;</label>
+        <button id="btnForce" class="btn secondary" title="清空 Service Worker 缓存并重新下载引擎">强制刷新</button>
       </div>
     </div>
     <div class="output-box" id="output"></div>
@@ -150,13 +189,16 @@
   </div>
 </div>
 
+<div class="update-banner" id="updateBanner" role="status" aria-live="polite">
+  <span id="updateText">检测到新版本，刷新后可使用最新引擎。</span>
+  <button id="btnUpdate" class="btn">立即刷新</button>
+  <button class="close" id="btnUpdateDismiss" aria-label="关闭">×</button>
+</div>
+
 <script>
 /* =============================================================
  * 主线程：页面加载后立即下载 WASM + JS，引擎启动后常驻
- * 引擎常驻方案：SharedArrayBuffer + Atomics.wait
- *   - 主线程写 SAB，Atomics.notify 唤醒
- *   - Worker 中 stdinByte 从 SAB 读，空则 Atomics.wait
- *   - 引擎只启动一次，callMain 永不返回
+ * 备用模式：每次思考重启 Worker，通过 commands 列表发送 UCI 命令
  * ============================================================= */
 const outputEl   = document.getElementById('output');
 const statusEl   = document.getElementById('status');
@@ -167,6 +209,7 @@ const loadPctEl  = document.getElementById('loadPct');
 const btnRun     = document.getElementById('btnRun');
 const btnClear   = document.getElementById('btnClear');
 const fenEl      = document.getElementById('fen');
+const movesEl    = document.getElementById('moves');
 const movetimeEl = document.getElementById('movetime');
 
 /* 状态 */
@@ -174,13 +217,6 @@ let cachedWasmBinary = null;
 let cachedJsText    = null;
 let currentWorker   = null;
 let engineReady     = false;  // engine 已启动并 ready
-
-/* SAB 共享环形缓冲区 */
-const SAB_DATA_BYTES = 65536;
-let sab = null;
-let sabInt32 = null;
-let sabBytes = null;
-let sabAvailable = false;
 
 /* ---------- DOM 辅助 ---------- */
 function appendLine(text, cls) {
@@ -207,28 +243,6 @@ btnClear.addEventListener('click', function () { outputEl.textContent = ''; });
 function getAssetBase() {
   const path = location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
   return location.origin + path;
-}
-
-/* ---------- SAB 初始化 ---------- */
-function tryInitSAB() {
-  try {
-    if (typeof SharedArrayBuffer === 'undefined' ||
-        typeof Atomics === 'undefined' ||
-        typeof Atomics.wait !== 'function' ||
-        typeof Atomics.notify !== 'function') {
-      return false;
-    }
-    const total = 8 + SAB_DATA_BYTES;
-    sab = new SharedArrayBuffer(total);
-    sabInt32 = new Int32Array(sab, 0, 2);
-    sabBytes = new Uint8Array(sab, 8, SAB_DATA_BYTES);
-    Atomics.store(sabInt32, 0, 0);
-    Atomics.store(sabInt32, 1, 0);
-    sabAvailable = true;
-    return true;
-  } catch (e) {
-    return false;
-  }
 }
 
 /* ---------- 下载 WASM（带进度） ---------- */
@@ -274,23 +288,6 @@ async function downloadEngineJs() {
   const txt = await resp.text();
   appendLine('[调试] JS 文本 ' + (txt.length/1024).toFixed(1) + ' KB', 'dbg');
   return txt;
-}
-
-/* ---------- 主线程：往 SAB 写命令 ---------- */
-function writeCommandsToSAB(commandText) {
-  for (let i = 0; i < commandText.length; i++) {
-    const byte = commandText.charCodeAt(i);
-    while (true) {
-      const r = Atomics.load(sabInt32, 0);
-      const w = Atomics.load(sabInt32, 1);
-      if (w - r < SAB_DATA_BYTES) break;
-      Atomics.wait(sabInt32, 0, r, 100);
-    }
-    const w = Atomics.load(sabInt32, 1);
-    sabBytes[w % SAB_DATA_BYTES] = byte;
-    Atomics.store(sabInt32, 1, w + 1);
-    Atomics.notify(sabInt32, 1, 1);
-  }
 }
 
 /* ---------- 启动引擎 ---------- */
@@ -349,87 +346,83 @@ function startEngine(firstCommands) {
     type: 'init',
     wasmBinary: cachedWasmBinary,
     engineJs: cachedJsText,
-    sab: sab,
-    sabAvailable: sabAvailable,
-    commands: []  // stdin 通过 SAB 提供
+    sab: null,
+    sabAvailable: false,
+    commands: firstCommands || []
   });
 }
 
-/* ---------- 发送 UCI 命令（对已启动的常驻引擎） ---------- */
+/* ---------- 发送 UCI 命令（每次重启 Worker + 命令流） ---------- */
 function sendCommands(commands) {
-  if (sabAvailable) {
-    const cmdText = commands.map(c => c + '\n').join('');
-    appendLine('[系统] 发送 ' + commands.length + ' 条 UCI 命令…', 'sys');
-    for (let i = 0; i < commands.length; i++) {
-      appendLine('[→] ' + commands[i], 'in');
-    }
-    writeCommandsToSAB(cmdText);
-    statusEl.textContent = '引擎思考中…';
-  } else {
-    // 备用模式：重新启动 Worker + 命令流
-    if (currentWorker) {
-      try { currentWorker.terminate(); } catch (e) {}
-      currentWorker = null;
-    }
-    engineReady = false;
-    overlayEl.classList.remove('hidden');
-    setLoadProgress(100, '正在启动引擎…');
-    const worker = new Worker('worker.js');
-    currentWorker = worker;
-    worker.onmessage = function (ev) {
-      const msg = ev.data;
-      if (!msg || !msg.type) return;
-      if (msg.type === 'debug') appendLine('[调试] ' + msg.text, 'dbg');
-      else if (msg.type === 'stdout') appendLine(msg.text, 'out');
-      else if (msg.type === 'stderr') appendLine(msg.text, 'err');
-      else if (msg.type === 'ready') {
-        btnRun.disabled = false;
-        btnRun.textContent = '开始思考';
-        overlayEl.classList.add('hidden');
-        statusEl.textContent = '引擎已就绪';
-        engineReady = true;
-      } else if (msg.type === 'done') {
-        overlayEl.classList.add('hidden');
-        statusEl.textContent = '思考结束';
-        appendLine('[系统] 引擎退出（code=' + msg.code + '）', 'sys');
-        // 备用模式：引擎每次思考后退出，下一次点击需重新启动
-        currentWorker = null;
-        engineReady = false;
-      } else if (msg.type === 'error') {
-        overlayEl.classList.add('hidden');
-        appendLine('[错误] ' + msg.text, 'err');
-        currentWorker = null;
-        engineReady = false;
-      }
-    };
-    worker.onerror = function (ev) { appendLine('[Worker错误] ' + ev.message, 'err'); };
-    appendLine('[系统] 发送 ' + commands.length + ' 条 UCI 命令…', 'sys');
-    for (let i = 0; i < commands.length; i++) {
-      appendLine('[→] ' + commands[i], 'in');
-    }
-    worker.postMessage({
-      type: 'init',
-      wasmBinary: cachedWasmBinary,
-      engineJs: cachedJsText,
-      sab: null,
-      sabAvailable: false,
-      commands: commands
-    });
+  // 重新启动 Worker + 命令流
+  if (currentWorker) {
+    try { currentWorker.terminate(); } catch (e) {}
+    currentWorker = null;
   }
+  engineReady = false;
+  overlayEl.classList.remove('hidden');
+  setLoadProgress(100, '正在启动引擎…');
+  const worker = new Worker('worker.js');
+  currentWorker = worker;
+  worker.onmessage = function (ev) {
+    const msg = ev.data;
+    if (!msg || !msg.type) return;
+    if (msg.type === 'debug') appendLine('[调试] ' + msg.text, 'dbg');
+    else if (msg.type === 'stdout') appendLine(msg.text, 'out');
+    else if (msg.type === 'stderr') appendLine(msg.text, 'err');
+    else if (msg.type === 'ready') {
+      btnRun.disabled = false;
+      btnRun.textContent = '开始思考';
+      overlayEl.classList.add('hidden');
+      statusEl.textContent = '引擎已就绪';
+      engineReady = true;
+    } else if (msg.type === 'done') {
+      overlayEl.classList.add('hidden');
+      statusEl.textContent = '思考结束';
+      appendLine('[系统] 引擎退出（code=' + msg.code + '）', 'sys');
+      // 备用模式：引擎每次思考后退出，下一次点击需重新启动
+      currentWorker = null;
+      engineReady = false;
+    } else if (msg.type === 'error') {
+      overlayEl.classList.add('hidden');
+      appendLine('[错误] ' + msg.text, 'err');
+      currentWorker = null;
+      engineReady = false;
+    }
+  };
+  worker.onerror = function (ev) { appendLine('[Worker错误] ' + ev.message, 'err'); };
+  appendLine('[系统] 发送 ' + commands.length + ' 条 UCI 命令…', 'sys');
+  for (let i = 0; i < commands.length; i++) {
+    appendLine('[→] ' + commands[i], 'in');
+  }
+  worker.postMessage({
+    type: 'init',
+    wasmBinary: cachedWasmBinary,
+    engineJs: cachedJsText,
+    sab: null,
+    sabAvailable: false,
+    commands: commands
+  });
 }
 
 /* ---------- 事件绑定 ---------- */
 btnRun.addEventListener('click', function () {
-  const fen = fenEl.value.trim();
-  const sec = parseFloat(movetimeEl.value);
-  if (!fen)   { appendLine('[系统] 请先输入 FEN。', 'sys'); return; }
+  const fen   = fenEl.value.trim();
+  const rawCmds = movesEl.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const sec   = parseFloat(movetimeEl.value);
   if (!sec || sec <= 0) { appendLine('[系统] 请输入 > 0 的时间（秒）。', 'sys'); return; }
 
   const ms = Math.round(sec * 1000);
-  const commands = [
-    'position fen ' + fen,
-    'go movetime ' + ms
-  ];
+  const commands = [];
+  if (rawCmds.length > 0) {
+    // UCI 命令栏有信息 — 直接发送该栏的命令，不执行 position fen，也不追加 go movetime
+    for (let i = 0; i < rawCmds.length; i++) commands.push(rawCmds[i]);
+  } else {
+    // UCI 命令栏为空 — 使用 FEN + go movetime
+    if (!fen) { appendLine('[系统] 请先输入 FEN，或在「UCI 命令」栏填写命令。', 'sys'); return; }
+    commands.push('position fen ' + fen);
+    commands.push('go movetime ' + ms);
+  }
 
   if (!currentWorker || !engineReady) {
     // 引擎还没启动好 — 排队等待 ready 后发送
@@ -446,21 +439,14 @@ btnRun.addEventListener('click', function () {
 
 /* =============================================================
  * 页面加载流程：
- *   1. 初始化 SAB
- *   2. 立即下载 WASM（显示加载层与进度）
+ *   1. 显示加载层
+ *   2. 下载 WASM（带进度）
  *   3. 下载 JS
- *   4. 启动引擎 Worker（callMain 会挂起等待命令）
+ *   4. 启动引擎 Worker（备用模式：每次思考重启）
  *   5. 收到 ready 消息 — 隐藏加载层，启用按钮
  * ============================================================= */
 window.addEventListener('load', async function () {
-  // 1. 初始化 SAB
-  if (tryInitSAB()) {
-    appendLine('[系统] 引擎常驻模式（SharedArrayBuffer 可用）', 'sys');
-  } else {
-    appendLine('[系统] 引擎重启模式（SAB 不可用，每次需重启 Worker）', 'sys');
-  }
-
-  // 2. 显示覆盖层并开始下载
+  // 1. 显示覆盖层并开始下载
   btnRun.disabled = true;
   btnRun.textContent = '下载中…';
   statusEl.textContent = '正在下载引擎…';
@@ -468,12 +454,12 @@ window.addEventListener('load', async function () {
   setLoadProgress(0, '正在下载引擎二进制…');
 
   try {
-    // 3. 下载 WASM + JS
+    // 2. 下载 WASM + JS
     cachedWasmBinary = await downloadWasmWithProgress();
     setLoadProgress(97, '正在下载引擎 JS…');
     cachedJsText = await downloadEngineJs();
 
-    // 4. 启动引擎 — 不发送初始命令，引擎在 SAB 上等待
+    // 3. 启动引擎 — 备用模式：不预发送命令，每次思考时再启动 Worker
     startEngine(null);
   } catch (err) {
     btnRun.disabled = false;
@@ -483,6 +469,85 @@ window.addEventListener('load', async function () {
     statusEl.textContent = '下载失败：' + err.message;
   }
 });
+
+/* =============================================================
+ * Service Worker：离线缓存 + 自动检测新版本
+ *   - 首次访问安装 SW，预缓存所有静态资源
+ *   - 后续访问走 stale-while-revalidate，命中缓存立即返回
+ *   - 后台 fetch 检测到资源更新 → 推送 CACHE_UPDATED 消息
+ *   - 弹横幅提示用户「立即刷新」以使用新版本引擎
+ * ============================================================= */
+(function setupServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+
+  const updateBanner   = document.getElementById('updateBanner');
+  const updateTextEl   = document.getElementById('updateText');
+  const btnUpdate      = document.getElementById('btnUpdate');
+  const btnUpdateDismiss = document.getElementById('btnUpdateDismiss');
+  const btnForce       = document.getElementById('btnForce');
+  let updateDismissed  = false;
+
+  function showUpdateBanner(msg) {
+    if (updateDismissed) return;
+    if (msg) updateTextEl.textContent = msg;
+    updateBanner.classList.add('show');
+  }
+  function hideUpdateBanner() { updateBanner.classList.remove('show'); }
+
+  btnUpdate.addEventListener('click', function () { location.reload(); });
+  btnUpdateDismiss.addEventListener('click', function () {
+    updateDismissed = true;
+    hideUpdateBanner();
+  });
+
+  /* 「强制刷新」按钮：清空 SW 缓存 → 重新加载 */
+  btnForce.addEventListener('click', function () {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+      appendLine('[系统] 尚未注册 Service Worker，直接刷新页面。', 'sys');
+      location.reload();
+      return;
+    }
+    btnForce.disabled = true;
+    btnForce.textContent = '清理中…';
+    navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+  });
+
+  /* 接收 SW 推送的消息 */
+  navigator.serviceWorker.addEventListener('message', function (ev) {
+    const data = ev.data || {};
+    if (data.type === 'CACHE_UPDATED') {
+      appendLine('[系统] 检测到资源更新：' + data.url, 'sys');
+      showUpdateBanner('检测到引擎更新（WASM / JS），刷新页面后立即生效。');
+    } else if (data.type === 'CACHE_CLEARED') {
+      appendLine('[系统] 缓存已清空，重新加载页面…', 'sys');
+      location.reload();
+    }
+  });
+
+  /* 注册 SW（scope 默认为 sw.js 所在目录） */
+  navigator.serviceWorker.register('sw.js').then(function (reg) {
+    appendLine('[系统] 已注册 Service Worker：' + reg.scope, 'sys');
+
+    /* 新 SW 安装完成时（页面已被旧 SW 控制）→ 提示刷新 */
+    if (reg.waiting) {
+      showUpdateBanner('检测到引擎更新（Service Worker），刷新页面后立即生效。');
+    }
+    reg.addEventListener('updatefound', function () {
+      const newWorker = reg.installing;
+      if (!newWorker) return;
+      newWorker.addEventListener('statechange', function () {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateBanner('检测到引擎更新（Service Worker），刷新页面后立即生效。');
+        }
+      });
+    });
+
+    /* 周期性后台检查（每 10 分钟），及时发现引擎更新 */
+    setInterval(function () { reg.update().catch(function () {}); }, 10 * 60 * 1000);
+  }).catch(function (err) {
+    appendLine('[系统] Service Worker 注册失败：' + err.message, 'err');
+  });
+})();
 </script>
 </body>
 </html>
