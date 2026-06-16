@@ -30,7 +30,7 @@
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
   .field.fen { flex: 1 1 100%; }
   label { font-size: 13px; color: #475569; font-weight: 600; }
-  input[type="text"], input[type="number"] {
+  input[type="text"], input[type="number"], textarea {
     font: inherit;
     padding: 9px 11px;
     border: 1px solid #cbd2e0;
@@ -40,11 +40,12 @@
     transition: border-color .15s, box-shadow .15s;
     width: 100%;
   }
-  input[type="text"]:focus, input[type="number"]:focus {
+  input[type="text"]:focus, input[type="number"]:focus, textarea:focus {
     border-color: #4f7cff;
     box-shadow: 0 0 0 3px rgba(79,124,255,.18);
     background: #fff;
   }
+  textarea { resize: vertical; min-height: 70px; font-family: "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; }
   .btn {
     padding: 9px 16px;
     border: none;
@@ -112,6 +113,7 @@
   <div class="desc">
     输入 FEN 与思考时间（秒），点击「开始思考」。引擎在首次使用中以原生 UCI 协议（stdin / stdout）通信，
     输出将实时追加到下方文本框。WASM 二进制与引擎 JS 文本仅在首次访问时下载，后续复用缓存，引擎常驻。
+    如需直接发送 UCI 命令，可填写「UCI 命令」栏（填写后跳过 FEN 路径，按行逐条发送）。
   </div>
 
   <div class="card">
@@ -124,8 +126,11 @@
     </div>
     <div class="row" style="margin-top:12px;">
       <div class="field fen">
-        <label for="moves">着法（可选，填写后将改用 startpos + 着法，不发送 FEN 命令）</label>
-        <input id="moves" type="text" placeholder="例如：h2e2 h9g7">
+        <label for="moves">UCI 命令（可选，按行填写；填写后将直接发送这些命令，不执行 FEN 命令）</label>
+        <textarea id="moves" rows="3" placeholder="uci
+isready
+position startpos moves e2e4
+go movetime 3000"></textarea>
       </div>
     </div>
     <div class="row" style="margin-top:12px;">
@@ -369,21 +374,21 @@ function sendCommands(commands) {
 /* ---------- 事件绑定 ---------- */
 btnRun.addEventListener('click', function () {
   const fen   = fenEl.value.trim();
-  const moves = movesEl.value.trim();
+  const rawCmds = movesEl.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   const sec   = parseFloat(movetimeEl.value);
   if (!sec || sec <= 0) { appendLine('[系统] 请输入 > 0 的时间（秒）。', 'sys'); return; }
 
   const ms = Math.round(sec * 1000);
   const commands = [];
-  if (moves) {
-    // 着法栏有信息 — 不发送 position fen，改用 startpos + 着法
-    commands.push('position startpos moves ' + moves);
+  if (rawCmds.length > 0) {
+    // UCI 命令栏有信息 — 直接发送该栏的命令，不执行 position fen，也不追加 go movetime
+    for (let i = 0; i < rawCmds.length; i++) commands.push(rawCmds[i]);
   } else {
-    // 着法栏为空 — 使用 FEN
-    if (!fen) { appendLine('[系统] 请先输入 FEN，或在「着法」栏填写着法。', 'sys'); return; }
+    // UCI 命令栏为空 — 使用 FEN + go movetime
+    if (!fen) { appendLine('[系统] 请先输入 FEN，或在「UCI 命令」栏填写命令。', 'sys'); return; }
     commands.push('position fen ' + fen);
+    commands.push('go movetime ' + ms);
   }
-  commands.push('go movetime ' + ms);
 
   if (!currentWorker || !engineReady) {
     // 引擎还没启动好 — 排队等待 ready 后发送
