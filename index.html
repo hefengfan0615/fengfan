@@ -105,6 +105,29 @@
     transition: width .2s ease;
   }
   .percent { margin-top: 10px; font-weight: 700; color: #2d3a5f; font-variant-numeric: tabular-nums; }
+  .update-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: #2d3a5f;
+    color: #fff;
+    padding: 12px 18px;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    display: none;
+    align-items: center;
+    gap: 14px;
+    z-index: 10000;
+    font-size: 14px;
+  }
+  .update-banner.show { display: flex; }
+  .update-banner .btn { padding: 6px 14px; font-size: 13px; }
+  .update-banner .close {
+    background: transparent; color: #cbd5e1; border: none; cursor: pointer;
+    font-size: 18px; line-height: 1; padding: 0 4px;
+  }
+  .update-banner .close:hover { color: #fff; }
 </style>
 </head>
 <body>
@@ -112,7 +135,8 @@
   <h1>Pikafish WASM 引擎测试</h1>
   <div class="desc">
     输入 FEN 与思考时间（秒），点击「开始思考」。引擎在首次使用中以原生 UCI 协议（stdin / stdout）通信，
-    输出将实时追加到下方文本框。WASM 二进制与引擎 JS 文本仅在首次访问时下载，后续复用缓存，引擎常驻。
+    输出将实时追加到下方文本框。本页面使用 Service Worker 缓存引擎资源，断网仍可使用；
+    当服务器上的 WASM/JS 更新时，会自动检测并提示刷新。
     如需直接发送 UCI 命令，可填写「UCI 命令」栏（填写后跳过 FEN 路径，按行逐条发送）。
   </div>
 
@@ -146,6 +170,10 @@ go movetime 3000"></textarea>
         <label>&nbsp;</label>
         <button id="btnClear" class="btn secondary">清空输出</button>
       </div>
+      <div class="field" style="min-width:140px;">
+        <label>&nbsp;</label>
+        <button id="btnForce" class="btn secondary" title="清空 Service Worker 缓存并重新下载引擎">强制刷新</button>
+      </div>
     </div>
     <div class="output-box" id="output"></div>
     <div class="status" id="status">引擎尚未启动。</div>
@@ -159,6 +187,12 @@ go movetime 3000"></textarea>
     <div class="bar"><div id="loadBar"></div></div>
     <div class="percent" id="loadPct">0%</div>
   </div>
+</div>
+
+<div class="update-banner" id="updateBanner" role="status" aria-live="polite">
+  <span id="updateText">检测到新版本，刷新后可使用最新引擎。</span>
+  <button id="btnUpdate" class="btn">立即刷新</button>
+  <button class="close" id="btnUpdateDismiss" aria-label="关闭">×</button>
 </div>
 
 <script>
@@ -435,6 +469,85 @@ window.addEventListener('load', async function () {
     statusEl.textContent = '下载失败：' + err.message;
   }
 });
+
+/* =============================================================
+ * Service Worker：离线缓存 + 自动检测新版本
+ *   - 首次访问安装 SW，预缓存所有静态资源
+ *   - 后续访问走 stale-while-revalidate，命中缓存立即返回
+ *   - 后台 fetch 检测到资源更新 → 推送 CACHE_UPDATED 消息
+ *   - 弹横幅提示用户「立即刷新」以使用新版本引擎
+ * ============================================================= */
+(function setupServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+
+  const updateBanner   = document.getElementById('updateBanner');
+  const updateTextEl   = document.getElementById('updateText');
+  const btnUpdate      = document.getElementById('btnUpdate');
+  const btnUpdateDismiss = document.getElementById('btnUpdateDismiss');
+  const btnForce       = document.getElementById('btnForce');
+  let updateDismissed  = false;
+
+  function showUpdateBanner(msg) {
+    if (updateDismissed) return;
+    if (msg) updateTextEl.textContent = msg;
+    updateBanner.classList.add('show');
+  }
+  function hideUpdateBanner() { updateBanner.classList.remove('show'); }
+
+  btnUpdate.addEventListener('click', function () { location.reload(); });
+  btnUpdateDismiss.addEventListener('click', function () {
+    updateDismissed = true;
+    hideUpdateBanner();
+  });
+
+  /* 「强制刷新」按钮：清空 SW 缓存 → 重新加载 */
+  btnForce.addEventListener('click', function () {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+      appendLine('[系统] 尚未注册 Service Worker，直接刷新页面。', 'sys');
+      location.reload();
+      return;
+    }
+    btnForce.disabled = true;
+    btnForce.textContent = '清理中…';
+    navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+  });
+
+  /* 接收 SW 推送的消息 */
+  navigator.serviceWorker.addEventListener('message', function (ev) {
+    const data = ev.data || {};
+    if (data.type === 'CACHE_UPDATED') {
+      appendLine('[系统] 检测到资源更新：' + data.url, 'sys');
+      showUpdateBanner('检测到引擎更新（WASM / JS），刷新页面后立即生效。');
+    } else if (data.type === 'CACHE_CLEARED') {
+      appendLine('[系统] 缓存已清空，重新加载页面…', 'sys');
+      location.reload();
+    }
+  });
+
+  /* 注册 SW（scope 默认为 sw.js 所在目录） */
+  navigator.serviceWorker.register('sw.js').then(function (reg) {
+    appendLine('[系统] 已注册 Service Worker：' + reg.scope, 'sys');
+
+    /* 新 SW 安装完成时（页面已被旧 SW 控制）→ 提示刷新 */
+    if (reg.waiting) {
+      showUpdateBanner('检测到引擎更新（Service Worker），刷新页面后立即生效。');
+    }
+    reg.addEventListener('updatefound', function () {
+      const newWorker = reg.installing;
+      if (!newWorker) return;
+      newWorker.addEventListener('statechange', function () {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateBanner('检测到引擎更新（Service Worker），刷新页面后立即生效。');
+        }
+      });
+    });
+
+    /* 周期性后台检查（每 10 分钟），及时发现引擎更新 */
+    setInterval(function () { reg.update().catch(function () {}); }, 10 * 60 * 1000);
+  }).catch(function (err) {
+    appendLine('[系统] Service Worker 注册失败：' + err.message, 'err');
+  });
+})();
 </script>
 </body>
 </html>
