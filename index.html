@@ -198,7 +198,10 @@ go movetime 3000"></textarea>
 <script>
 /* =============================================================
  * 主线程：页面加载后立即下载 WASM + JS，引擎启动后常驻
- * 备用模式：每次思考重启 Worker，通过 commands 列表发送 UCI 命令
+ * 引擎常驻方案：SharedArrayBuffer + Atomics.wait
+ *   - 主线程写 SAB，Atomics.notify 唤醒
+ *   - Worker 中 stdinByte 从 SAB 读，空则 Atomics.wait
+ *   - 引擎只启动一次，callMain 永不返回
  * ============================================================= */
 const outputEl   = document.getElementById('output');
 const statusEl   = document.getElementById('status');
@@ -217,6 +220,13 @@ let cachedWasmBinary = null;
 let cachedJsText    = null;
 let currentWorker   = null;
 let engineReady     = false;  // engine 已启动并 ready
+
+/* SAB 共享环形缓冲区（与 Worker 通信 stdin） */
+const SAB_DATA_BYTES = 65536;
+let sab = null;
+let sabInt32 = null;
+let sabBytes = null;
+let sabAvailable = false;
 
 /* ---------- DOM 辅助 ---------- */
 function appendLine(text, cls) {
@@ -243,6 +253,45 @@ btnClear.addEventListener('click', function () { outputEl.textContent = ''; });
 function getAssetBase() {
   const path = location.pathname.substring(0, location.pathname.lastIndexOf('/') + 1);
   return location.origin + path;
+}
+
+/* ---------- SAB 初始化 ---------- */
+function tryInitSAB() {
+  try {
+    if (typeof SharedArrayBuffer === 'undefined' ||
+        typeof Atomics === 'undefined' ||
+        typeof Atomics.wait !== 'function' ||
+        typeof Atomics.notify !== 'function') {
+      return false;
+    }
+    const total = 8 + SAB_DATA_BYTES;
+    sab = new SharedArrayBuffer(total);
+    sabInt32 = new Int32Array(sab, 0, 2);
+    sabBytes = new Uint8Array(sab, 8, SAB_DATA_BYTES);
+    Atomics.store(sabInt32, 0, 0);
+    Atomics.store(sabInt32, 1, 0);
+    sabAvailable = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------- 主线程：往 SAB 写命令 ---------- */
+function writeCommandsToSAB(commandText) {
+  for (let i = 0; i < commandText.length; i++) {
+    const byte = commandText.charCodeAt(i);
+    while (true) {
+      const r = Atomics.load(sabInt32, 0);
+      const w = Atomics.load(sabInt32, 1);
+      if (w - r < SAB_DATA_BYTES) break;
+      Atomics.wait(sabInt32, 0, r, 100);
+    }
+    const w = Atomics.load(sabInt32, 1);
+    sabBytes[w % SAB_DATA_BYTES] = byte;
+    Atomics.store(sabInt32, 1, w + 1);
+    Atomics.notify(sabInt32, 1, 1);
+  }
 }
 
 /* ---------- 下载 WASM（带进度） ---------- */
@@ -346,9 +395,9 @@ function startEngine(firstCommands) {
     type: 'init',
     wasmBinary: cachedWasmBinary,
     engineJs: cachedJsText,
-    sab: null,
-    sabAvailable: false,
-    commands: firstCommands || []
+    sab: sab,
+    sabAvailable: sabAvailable,
+    commands: []  // 常驻模式：stdin 通过 SAB 提供
   });
 }
 
