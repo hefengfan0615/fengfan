@@ -309,27 +309,49 @@ Board.prototype.response = function() {
 
   var finishSearch = function(mv) {
     try {
-      if (mv > 0 && this_.pos.legalMove(mv)) {
-        appendUci('[调试] 尝试 addMove mv=' + mv + ' src=' + (mv & 255) + ' dst=' + (mv >> 8), 'dbg');
-        // 方案 A: 使用 addMove（含动画）
-        var savedAnimated = this_.animated;
-        // 先关闭动画强制走子，确保走子完成
-        this_.animated = false;
-        this_.addMove(mv, true);
-        // 恢复动画设置（下次走子生效）
-        this_.animated = savedAnimated;
-        appendUci('[调试] addMove 完成', 'dbg');
-      } else {
-        if (mv > 0) {
-          appendUci('[错误] 引擎返回非法着法: mv=' + mv + ' src=' + (mv & 255) + ' dst=' + (mv >> 8), 'err');
-        } else {
-          appendUci('[错误] 引擎返回空着法', 'err');
-        }
+      appendUci('[调试] finishSearch 收到 mv=' + mv, 'dbg');
+      if (mv <= 0) {
+        appendUci('[错误] 引擎返回空着法 mv=' + mv, 'err');
         this_.busy = false;
         this_.flushBoard();
+        return;
       }
+
+      // 1) 先检查 legalMove
+      if (!this_.pos.legalMove(mv)) {
+        appendUci('[错误] legalMove 失败: mv=' + mv + ' src=' + (mv & 255) + ' dst=' + (mv >> 8), 'err');
+        this_.busy = false;
+        this_.flushBoard();
+        return;
+      }
+      appendUci('[调试] legalMove 通过', 'dbg');
+
+      // 2) 方案A: 用 addMove（非动画）
+      var savedAnimated = this_.animated;
+      this_.animated = false;
+      appendUci('[调试] 调用 addMove...', 'dbg');
+      this_.addMove(mv, true);
+      this_.animated = savedAnimated;
+      appendUci('[调试] addMove 返回', 'dbg');
+
+      // 3) 强制刷新棋盘 — 确保界面更新
+      this_.flushBoard();
+      appendUci('[调试] flushBoard 完成', 'dbg');
+
+      // 4) 确保 busy 标志被重置（addMove/postAddMove/response 链应该已处理，
+      //    但作为安全措施显式设置）
+      this_.busy = false;
+      this_.sqSelected = 0;
+
+      // 5) 验证棋盘状态
+      var sqSrc = mv & 255;
+      var sqDst = mv >> 8;
+      appendUci('[调试] 走子后 squares[src]=' + this_.pos.squares[sqSrc] + ' squares[dst]=' + this_.pos.squares[sqDst], 'dbg');
+      appendUci('[调试] mvLast=' + this_.mvLast + ' sdPlayer=' + this_.pos.sdPlayer + ' busy=' + this_.busy, 'dbg');
+
     } catch (e) {
-      appendUci('[错误] 走子回调异常: ' + (e.message || e) + '\n' + (e.stack || ''), 'err');
+      appendUci('[错误] finishSearch 异常: ' + (e.message || e), 'err');
+      appendUci('[错误] stack: ' + (e.stack || '无'), 'err');
       this_.busy = false;
       this_.flushBoard();
     }
