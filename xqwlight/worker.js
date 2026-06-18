@@ -108,6 +108,7 @@ self.onmessage = function(ev) {
     self.Module["onRuntimeInitialized"] = function() {
       debug("onRuntimeInitialized: runtime 已初始化，启动 callMain");
       postMsg({ type: 'ready' });
+      var exitCode = 0;
       // 在 onRuntimeInitialized 中调用 callMain，保证 WASM 已就绪
       try {
         if (typeof callMain === 'function') {
@@ -121,11 +122,28 @@ self.onmessage = function(ev) {
           return;
         }
         debug("callMain() 返回 — 引擎执行完毕");
-        // 备用模式下：引擎读到 EOF 后退出
-        // 常驻模式下：引擎永不退出（stdinByte 永不返回 null）
       } catch (e) {
-        debug("callMain 异常: " + e.message);
-        postMsg({ type: 'error', text: "callMain 失败: " + e.message });
+        // ExitStatus 是 Emscripten 正常退出方式（throw ExitStatus 是正常的，不是错误）
+        if (e.name === 'ExitStatus') {
+          exitCode = typeof e.status === 'number' ? e.status : 0;
+          debug("callMain 正常退出 (ExitStatus), code=" + exitCode);
+        } else {
+          exitCode = -1;
+          debug("callMain 异常: " + e.message);
+          if (e.message && e.message.indexOf('ExitStatus') >= 0) {
+            // 某些 Emscripten 版本 ExitStatus 的 name 不是 ExitStatus
+            debug("（识别为正常退出）");
+            exitCode = 0;
+          } else {
+            postMsg({ type: 'error', text: "callMain 失败: " + e.message });
+          }
+        }
+      }
+      // 备用模式（命令流）：引擎已执行完毕，发送 done
+      // 注意：Emscripten 的 onExit 可能因编译选项不会触发
+      // 所以在此处显式发送 done
+      if (!sabAvailable) {
+        postMsg({ type: 'done', code: exitCode });
       }
     };
     self.Module["onExit"] = function(code) {
