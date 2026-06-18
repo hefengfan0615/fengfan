@@ -216,6 +216,9 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
     commands.push("position fen " + fen);
     commands.push("go movetime " + movetimeMs);
 
+    // 显示 FEN 供调试
+    if (self.onUciStdout) self.onUciStdout('[调试] fen=' + fen);
+
     // 发送 UCI 命令提醒
     var reminders = self.uciReminders;
     for (var i = 0; i < reminders.length; i++) {
@@ -265,6 +268,7 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
           if (uciMove) {
             if (self.onUciStdout) self.onUciStdout('[UCI←] bestmove ' + uciMove);
             var xqwMove = uciToXqwMove(uciMove);
+            if (self.onUciStdout) self.onUciStdout('[调试] xqwMove=' + xqwMove + '  src=' + (xqwMove & 255) + '  dst=' + (xqwMove >> 8));
             resolve(xqwMove);
           } else {
             reject(new Error('未获取到 bestmove'));

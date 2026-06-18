@@ -278,8 +278,7 @@ board.setSearch(0);  // 不使用内置搜索，用 Pikafish 代替
 board.millis = 1000;
 board.computer = 1;
 
-// 覆盖 response 方法 — 使用 Pikafish UCI 引擎
-var _origResponse = Board.prototype.response;
+// 覆盖 response 方法 — 使用 Pikafish UCI 引擎（异步版本）
 Board.prototype.response = function() {
   if (this.search == null || !this.computerMove()) {
     this.busy = false;
@@ -290,21 +289,40 @@ Board.prototype.response = function() {
   var this_ = this;
   appendUci('[系统] 引擎开始思考...', 'sys');
   uciStatusEl.textContent = '引擎思考中...';
+
+  var finishSearch = function(mv) {
+    try {
+      if (mv > 0 && this_.pos.legalMove(mv)) {
+        // addMove 内部会调用 makeMove → postAddMove → response()
+        // 如果动画启用，postAddMove 在动画完成后调用
+        // response() 会根据 sdPlayer 重置 busy
+        this_.addMove(mv, true);
+      } else {
+        if (mv > 0) {
+          appendUci('[错误] 引擎返回非法着法: mv=' + mv, 'err');
+        } else {
+          appendUci('[错误] 引擎返回空着法', 'err');
+        }
+        this_.busy = false;
+        this_.flushBoard();
+      }
+    } catch (e) {
+      appendUci('[错误] 走子回调异常: ' + (e.message || e), 'err');
+      this_.busy = false;
+      this_.flushBoard();
+    }
+    this_.thinking.style.visibility = "hidden";
+    uciStatusEl.textContent = '引擎就绪';
+  };
+
   setTimeout(function() {
     if (this_.search && typeof this_.search.searchMain === 'function') {
-      this_.search.searchMain(LIMIT_DEPTH, this_.millis, function(mv) {
-        if (mv > 0 && this_.pos.legalMove(mv)) {
-          this_.addMove(mv, true);
-        } else {
-          appendUci('[错误] 引擎返回无效着法: ' + mv, 'err');
-          this_.busy = false;
-        }
-        this_.thinking.style.visibility = "hidden";
-        uciStatusEl.textContent = '引擎就绪';
-      });
+      this_.search.searchMain(LIMIT_DEPTH, this_.millis, finishSearch);
     } else {
+      appendUci('[错误] 搜索对象未就绪', 'err');
       this_.busy = false;
       this_.thinking.style.visibility = "hidden";
+      uciStatusEl.textContent = '引擎未就绪';
     }
   }, 50);
 };
