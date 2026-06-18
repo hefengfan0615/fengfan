@@ -293,6 +293,27 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
       sabAvailable: false,
       commands: commands
     });
+
+    // 添加超时保护：防止 Promise 永不 resolve
+    var timeoutMs = Math.max(movetimeMs + 15000, 30000);
+    var timeoutId = setTimeout(function() {
+      if (self.onUciStderr) self.onUciStderr('[错误] 搜索超时 (' + timeoutMs + 'ms)，强制终止');
+      try { worker.terminate(); } catch(e) {}
+      self.worker = null;
+      reject(new Error('搜索超时'));
+    }, timeoutMs);
+
+    // 在 resolve/reject 时清除超时
+    var originalResolve = resolve;
+    var originalReject = reject;
+    resolve = function(value) {
+      clearTimeout(timeoutId);
+      originalResolve(value);
+    };
+    reject = function(err) {
+      clearTimeout(timeoutId);
+      originalReject(err);
+    };
   });
 };
 

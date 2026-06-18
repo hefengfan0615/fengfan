@@ -542,6 +542,9 @@ function initEngine() {
     appendUci('', 'sys');
     appendUci('[系统] 点击棋盘走棋，引擎将自动响应', 'sys');
 
+    // 运行自我诊断
+    runDiagnostics();
+
     // 如果电脑先走，启动思考
     if (board.computerMove()) {
       setTimeout(function() { board.response(); }, 300);
@@ -551,6 +554,52 @@ function initEngine() {
     appendUci('[错误] 引擎初始化失败: ' + err.message, 'err');
     uciStatusEl.textContent = '引擎加载失败';
   });
+}
+
+/* ---------- 自我诊断 ---------- */
+function runDiagnostics() {
+  try {
+    appendUci('═══════════════════════════════════', 'sys');
+    appendUci('[诊断] 开始自我诊断...', 'sys');
+
+    // 1) 测试坐标转换
+    var testUci = "h2e2";
+    var xqwMove = uciToXqwMove(testUci);
+    var backToUci = xqwMoveToUci(xqwMove);
+    appendUci('[诊断] uciToXqwMove("h2e2")=' + xqwMove + ' → xqwMoveToUci()="' + backToUci + '" ' + (testUci === backToUci ? '✓' : '✗'), 'sys');
+    appendUci('[诊断]   sqSrc=' + (xqwMove & 255) + ' sqDst=' + (xqwMove >> 8), 'sys');
+
+    // 2) 测试 FEN 生成
+    var fenData = pikafishSearch._getFenWithMoves();
+    appendUci('[诊断] FEN: ' + fenData.fen, 'sys');
+
+    // 对比 board.pos.toFen()
+    var nativeFen = board.pos.toFen();
+    appendUci('[诊断] pos.toFen(): ' + nativeFen, 'sys');
+    appendUci('[诊断] FEN 匹配: ' + (fenData.fen === nativeFen ? '✓' : '✗'), 'sys');
+
+    // 3) 测试生成 FEN 中第一个着法的 legalMove
+    if (fenData.moves.length > 0) {
+      var firstMove = uciToXqwMove(fenData.moves[0]);
+      var legal = board.pos.legalMove(firstMove);
+      appendUci('[诊断] moves[0]=' + fenData.moves[0] + ' legalMove=' + legal, 'sys');
+    }
+
+    // 4) 测试引擎搜索
+    appendUci('[诊断] 执行快捷搜索测试 (200ms)...', 'sys');
+    pikafishSearch.searchUci(fenData.fen, fenData.moves, 200).then(function(mv) {
+      appendUci('[诊断] 搜索成功 mv=' + mv, 'sys');
+      appendUci('[诊断]  src=' + (mv & 255) + ' dst=' + (mv >> 8), 'sys');
+      appendUci('[诊断]  legalMove=' + board.pos.legalMove(mv), 'sys');
+      appendUci('═══════════════════════════════════', 'sys');
+    }).catch(function(err) {
+      appendUci('[诊断] 搜索失败: ' + err.message, 'err');
+      appendUci('═══════════════════════════════════', 'sys');
+    });
+  } catch (e) {
+    appendUci('[诊断] 异常: ' + (e.message || e), 'err');
+    appendUci('═══════════════════════════════════', 'sys');
+  }
 }
 
 /* ---------- 页面加载 ---------- */
