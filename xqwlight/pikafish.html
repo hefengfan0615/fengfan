@@ -1,0 +1,506 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pikafish 象棋小巫师</title>
+    <script type="text/javascript" src="book.js"></script>
+    <script type="text/javascript" src="position.js"></script>
+    <script type="text/javascript" src="board.js"></script>
+    <script type="text/javascript" src="cchess.js"></script>
+    <script type="text/javascript" src="pikafish-engine.js"></script>
+    <style type="text/css"><!--
+body {
+  background: #f0f2f5;
+  font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+  margin: 0;
+  padding: 0;
+  color: #333;
+}
+* { box-sizing: border-box; }
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.header {
+  text-align: center;
+  font-size: 28px;
+  font-weight: bold;
+  color: #1a3a6b;
+  padding: 16px 0 8px;
+  letter-spacing: 2px;
+}
+.header small {
+  font-size: 14px;
+  font-weight: normal;
+  color: #666;
+  display: block;
+  margin-top: 4px;
+}
+.game-area {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+}
+.board-wrapper {
+  flex: 0 0 auto;
+}
+.controls-wrapper {
+  flex: 0 0 160px;
+}
+.uci-panel {
+  flex: 0 0 340px;
+  max-width: 100%;
+}
+div.label {
+  font-size: 14px;
+  padding: 2px;
+}
+select {
+  font-size: 14px;
+  width: 150px;
+  padding: 2px;
+}
+option { font-size: 14px; }
+input.button {
+  font-size: 14px;
+  width: 150px;
+  padding: 6px 10px;
+  margin: 4px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+input.button:hover { background: #e8f0fe; }
+input.button.primary {
+  background: #1a3a6b;
+  color: #fff;
+  border-color: #1a3a6b;
+}
+input.button.primary:hover { background: #2a4a7b; }
+label { font-size: 14px; }
+.checkbox { vertical-align: middle; }
+#container {
+  display: inline-block;
+}
+/* UCI 输出面板 */
+.uci-panel .panel-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #1a3a6b;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.uci-panel .panel-title .badge {
+  font-size: 11px;
+  background: #e8f0fe;
+  color: #1a3a6b;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.uci-output {
+  background: #0f172a;
+  color: #d1e0ff;
+  border-radius: 8px;
+  padding: 12px;
+  height: 450px;
+  overflow-y: auto;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.uci-output .out { color: #d1e0ff; }
+.uci-output .in  { color: #7ee2a8; }
+.uci-output .err { color: #ff9aa8; }
+.uci-output .sys { color: #9cb3ff; font-style: italic; }
+.uci-output .rule { color: #f4c77a; }
+.uci-output .best { color: #ffd700; font-weight: bold; }
+.uci-output .dbg { color: #888; }
+.uci-status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #666;
+}
+/* 加载覆盖层 */
+#overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(15,23,42,.78);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+#overlay.hidden { display: none; }
+.loader {
+  background: #fff;
+  padding: 28px 32px;
+  border-radius: 12px;
+  width: 380px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.25);
+  text-align: center;
+}
+.loader h2 { margin: 0 0 10px; font-size: 17px; color: #1a3a6b; }
+.loader p  { margin: 0 0 14px; font-size: 13px; color: #64748b; min-height: 20px; }
+.bar { width: 100%; height: 10px; background: #eef1f8; border-radius: 99px; overflow: hidden; }
+.bar > div {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg,#4f7cff,#7aa4ff);
+  transition: width .2s ease;
+}
+.percent { margin-top: 10px; font-weight: 700; color: #1a3a6b; font-variant-numeric: tabular-nums; }
+    --></style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        Pikafish 象棋小巫师
+        <small>基于 UCI 协议的强大中国象棋引擎 · 遵守中国象棋竞赛规则</small>
+      </div>
+      <div class="game-area">
+        <!-- 棋盘 -->
+        <div class="board-wrapper">
+          <div id="container"></div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="controls-wrapper">
+          <div class="label">谁先走</div>
+          <div><select id="selMoveMode" size="3">
+            <option selected value="0">红方（我先走）</option>
+            <option value="1">黑方（电脑先走）</option>
+            <option value="2">双人对弈</option>
+          </select></div>
+          <div class="label">先走让子</div>
+          <div><select id="selHandicap" style="padding:0px">
+            <option selected value="0">不让子</option>
+            <option value="1">让左马</option>
+            <option value="2">让双马</option>
+            <option value="3">让九子</option>
+          </select></div>
+          <div style="padding-top:2px">
+            <input type="button" class="button primary" value="重新开始" onclick="restart_click()">
+          </div>
+          <div style="padding-top:2px">
+            <input type="button" class="button" value="悔棋" onclick="retract_click()">
+          </div>
+          <div style="height:12px"></div>
+          <div class="label">引擎思考时间</div>
+          <div><select id="selLevel" size="3" onchange="level_change()">
+            <option selected value="0">1 秒（快速）</option>
+            <option value="1">3 秒（业余）</option>
+            <option value="2">5 秒（专业）</option>
+            <option value="3">10 秒（深度）</option>
+          </select></div>
+          <div style="height:6px"></div>
+          <div><input type="checkbox" class="checkbox" id="chkAnimated" checked onclick="board.animated = checked"><label for="chkAnimated">动画</label></div>
+          <div><input type="checkbox" class="checkbox" checked onclick="board.setSound(checked)"><label for="chkSound">音效</label></div>
+          <div style="height:60px"></div>
+          <div class="label">步骤</div>
+          <div><select id="selMoveList" size="10" style="font-family:宋体" onchange="moveList_change()">
+            <option selected value="0">=== 开始 ===</option>
+          </select></div>
+        </div>
+
+        <!-- UCI 输出面板 -->
+        <div class="uci-panel">
+          <div class="panel-title">
+            UCI 引擎通信
+            <span class="badge">遵守棋规</span>
+            <span style="margin-left:auto;font-size:12px;font-weight:normal;">
+              <a href="#" onclick="clearUciOutput();return false;" style="color:#666;">清空</a>
+            </span>
+          </div>
+          <div class="uci-output" id="uciOutput">
+            <span class="sys">[系统] 等待引擎启动...</span>
+          </div>
+          <div class="uci-status" id="uciStatus">引擎未启动</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 加载覆盖层 -->
+    <div id="overlay">
+      <div class="loader">
+        <h2>正在加载 Pikafish 引擎</h2>
+        <p id="loadMsg">正在下载引擎...</p>
+        <div class="bar"><div id="loadBar"></div></div>
+        <div class="percent" id="loadPct">0%</div>
+      </div>
+    </div>
+
+    <script type="text/javascript"><!--
+"use strict";
+
+var STARTUP_FEN = [
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKAB1R w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/R1BAKAB1R w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/9/1C5C1/9/RN2K2NR w",
+];
+
+var LIMIT_DEPTH = 64;
+
+/* ---------- UCI 输出 ---------- */
+var uciOutputEl = document.getElementById('uciOutput');
+var uciStatusEl = document.getElementById('uciStatus');
+
+function appendUci(text, cls) {
+  var span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = text + '\n';
+  uciOutputEl.appendChild(span);
+  uciOutputEl.scrollTop = uciOutputEl.scrollHeight;
+}
+
+function clearUciOutput() {
+  uciOutputEl.textContent = '';
+}
+
+function setLoadProgress(percent, text) {
+  var p = Number(percent);
+  if (isFinite(p) && p >= 0) {
+    document.getElementById('loadBar').style.width = Math.min(100, Math.floor(p)) + '%';
+    document.getElementById('loadPct').textContent = Math.min(100, Math.floor(p)) + '%';
+  }
+  if (text) {
+    document.getElementById('loadMsg').textContent = text;
+  }
+}
+
+/* ---------- 棋盘初始化 ---------- */
+var board = new Board(container, "images/", "sounds/");
+board.setSearch(0);  // 不使用内置搜索，用 Pikafish 代替
+board.millis = 1000;
+board.computer = 1;
+
+// 覆盖 response 方法 — 使用 Pikafish UCI 引擎
+var _origResponse = Board.prototype.response;
+Board.prototype.response = function() {
+  if (this.search == null || !this.computerMove()) {
+    this.busy = false;
+    return;
+  }
+  this.thinking.style.visibility = "visible";
+  this.busy = true;
+  var this_ = this;
+  appendUci('[系统] 引擎开始思考...', 'sys');
+  uciStatusEl.textContent = '引擎思考中...';
+  setTimeout(function() {
+    if (this_.search && typeof this_.search.searchMain === 'function') {
+      this_.search.searchMain(LIMIT_DEPTH, this_.millis, function(mv) {
+        if (mv > 0 && this_.pos.legalMove(mv)) {
+          this_.addMove(mv, true);
+        } else {
+          appendUci('[错误] 引擎返回无效着法: ' + mv, 'err');
+          this_.busy = false;
+        }
+        this_.thinking.style.visibility = "hidden";
+        uciStatusEl.textContent = '引擎就绪';
+      });
+    } else {
+      this_.busy = false;
+      this_.thinking.style.visibility = "hidden";
+    }
+  }, 50);
+};
+
+// 覆盖 onAddMove — 更新走法列表
+board.onAddMove = function() {
+  var counter = (board.pos.mvList.length >> 1);
+  var space = (counter > 99 ? "    " : "   ");
+  counter = (counter > 9 ? "" : " ") + counter + ".";
+  var text = (board.pos.sdPlayer == 0 ? space : counter) + move2Iccs(board.mvLast);
+  var value = "" + board.mvLast;
+  try {
+    selMoveList.add(createOption(text, value, false));
+  } catch (e) {
+    selMoveList.add(createOption(text, value, true));
+  }
+  selMoveList.scrollTop = selMoveList.scrollHeight;
+};
+
+function createOption(text, value, ie8) {
+  var opt = document.createElement("option");
+  opt.selected = true;
+  opt.value = value;
+  if (ie8) {
+    opt.text = text;
+  } else {
+    opt.innerHTML = text.replace(/ /g, "&nbsp;");
+  }
+  return opt;
+}
+
+/* ---------- 控制函数 ---------- */
+function level_change() {
+  var levels = [1000, 3000, 5000, 10000];
+  board.millis = levels[selLevel.selectedIndex] || 1000;
+  appendUci('[系统] 引擎思考时间设为 ' + (board.millis / 1000) + ' 秒', 'sys');
+}
+
+function restart_click() {
+  selMoveList.options.length = 1;
+  selMoveList.selectedIndex = 0;
+  board.computer = 1 - selMoveMode.selectedIndex;
+  board.restart(STARTUP_FEN[selHandicap.selectedIndex]);
+  clearUciOutput();
+  appendUci('[系统] 新对局开始', 'sys');
+  if (board.computer === 0) {
+    appendUci('[系统] 电脑执红（先行）', 'sys');
+  } else if (board.computer === 1) {
+    appendUci('[系统] 电脑执黑（后行）', 'sys');
+  } else {
+    appendUci('[系统] 双人对弈模式', 'sys');
+  }
+  // 显示棋规提醒
+  var reminders = (typeof getRuleReminders === 'function') ? getRuleReminders() : [];
+  for (var i = 0; i < reminders.length; i++) {
+    appendUci(reminders[i], 'rule');
+  }
+  uciStatusEl.textContent = '引擎就绪';
+}
+
+function retract_click() {
+  for (var i = board.pos.mvList.length; i < selMoveList.options.length; i ++) {
+    board.pos.makeMove(parseInt(selMoveList.options[i].value));
+  }
+  board.retract();
+  selMoveList.options.length = board.pos.mvList.length;
+  selMoveList.selectedIndex = selMoveList.options.length - 1;
+}
+
+function moveList_change() {
+  if (board.result == RESULT_UNKNOWN) {
+    selMoveList.selectedIndex = selMoveList.options.length - 1;
+    return;
+  }
+  var from = board.pos.mvList.length;
+  var to = selMoveList.selectedIndex;
+  if (from == to + 1) {
+    return;
+  }
+  if (from > to + 1) {
+    for (var i = to + 1; i < from; i ++) {
+      board.pos.undoMakeMove();
+    }
+  } else {
+    for (var i = from; i <= to; i ++) {
+      board.pos.makeMove(parseInt(selMoveList.options[i].value));
+    }
+  }
+  board.flushBoard();
+}
+
+/* ---------- 引擎初始化 ---------- */
+var pikafishSearch = null;
+
+function initEngine() {
+  var overlayEl = document.getElementById('overlay');
+  overlayEl.classList.remove('hidden');
+  setLoadProgress(0, '正在下载引擎二进制...');
+
+  var base = getAssetBaseXqw();
+
+  // 下载 WASM
+  fetch(base + 'wasm/pikafish.wasm').then(function(resp) {
+    if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
+    var total = parseInt(resp.headers.get('content-length') || '0', 10);
+    if (!resp.body) return resp.arrayBuffer();
+    var reader = resp.body.getReader();
+    var chunks = [];
+    var received = 0;
+    function readChunk() {
+      return reader.read().then(function(result) {
+        if (result.done) {
+          var buf = new Uint8Array(received);
+          var off = 0;
+          for (var i = 0; i < chunks.length; i++) { buf.set(chunks[i], off); off += chunks[i].length; }
+          return buf.buffer;
+        }
+        chunks.push(result.value);
+        received += result.value.length;
+        var pct = total > 0 ? (received / total) * 100 : NaN;
+        setLoadProgress(pct, '下载引擎 ' + (received/1024/1024).toFixed(2) + ' MB');
+        return readChunk();
+      });
+    }
+    return readChunk();
+  }).then(function(wasmBinary) {
+    setLoadProgress(95, '正在下载引擎脚本...');
+    return fetch(base + 'wasm/pikafish.js').then(function(resp) {
+      if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
+      return resp.text().then(function(jsText) {
+        return { wasmBinary: wasmBinary, engineJs: jsText };
+      });
+    });
+  }).then(function(assets) {
+    setLoadProgress(99, '正在启动引擎...');
+
+    // 创建 PikafishUciSearch
+    pikafishSearch = new PikafishUciSearch(board.pos, 16);
+    pikafishSearch.onUciStdout = function(text) {
+      // 自动分类输出
+      var cls = 'out';
+      if (text.indexOf('[UCI→]') === 0 || text.indexOf('[UCI←]') === 0) cls = 'in';
+      else if (text.indexOf('[棋规]') === 0) cls = 'rule';
+      else if (text.indexOf('[错误]') === 0) cls = 'err';
+      else if (text.indexOf('[系统]') === 0) cls = 'sys';
+      else if (text.indexOf('bestmove') === 0) cls = 'best';
+      appendUci(text, cls);
+    };
+    pikafishSearch.onUciStderr = function(text) {
+      appendUci('[stderr] ' + text, 'err');
+    };
+    pikafishSearch.onUciDebug = function(text) {
+      appendUci('[调试] ' + text, 'dbg');
+    };
+
+    pikafishSearch.wasmBinary = assets.wasmBinary;
+    pikafishSearch.engineJs = assets.engineJs;
+
+    // 测试引擎通信
+    return pikafishSearch.startEngine();
+  }).then(function() {
+    // 引擎就绪
+    board.search = pikafishSearch;
+    document.getElementById('overlay').classList.add('hidden');
+    uciStatusEl.textContent = '引擎就绪';
+    appendUci('[系统] Pikafish 引擎已就绪！', 'sys');
+    appendUci('', 'sys');
+    // 显示棋规提醒
+    var reminders = getRuleReminders();
+    for (var i = 0; i < reminders.length; i++) {
+      appendUci(reminders[i], 'rule');
+    }
+    appendUci('', 'sys');
+    appendUci('[系统] 点击棋盘走棋，引擎将自动响应', 'sys');
+
+    // 如果电脑先走，启动思考
+    if (board.computerMove()) {
+      setTimeout(function() { board.response(); }, 300);
+    }
+  }).catch(function(err) {
+    document.getElementById('overlay').classList.add('hidden');
+    appendUci('[错误] 引擎初始化失败: ' + err.message, 'err');
+    uciStatusEl.textContent = '引擎加载失败';
+  });
+}
+
+/* ---------- 页面加载 ---------- */
+window.addEventListener('load', function() {
+  // 设置初始棋盘
+  board.computer = 1 - selMoveMode.selectedIndex;
+  board.restart(STARTUP_FEN[0]);
+
+  // 初始化引擎
+  initEngine();
+});
+
+    --></script>
+  </body>
+</html>
