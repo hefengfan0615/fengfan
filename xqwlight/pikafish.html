@@ -236,6 +236,23 @@ label { font-size: 14px; }
     <script type="text/javascript"><!--
 "use strict";
 
+/* ---------- 全局错误捕获 ---------- */
+window.onerror = function(msg, url, line, col, err) {
+  var errText = '[全局错误] ' + msg + ' (行:' + line + ')';
+  if (typeof appendUci === 'function') {
+    try { appendUci(errText, 'err'); } catch(e) {}
+  }
+  console.error('PikafishUI 全局错误:', msg, url, line, col, err);
+  return true;
+};
+window.addEventListener('unhandledrejection', function(ev) {
+  var errText = '[未处理Promise拒绝] ' + (ev.reason ? (ev.reason.message || ev.reason) : 'unknown');
+  if (typeof appendUci === 'function') {
+    try { appendUci(errText, 'err'); } catch(e) {}
+  }
+  console.error('PikafishUI Promise拒绝:', ev.reason);
+});
+
 var STARTUP_FEN = [
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w",
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKAB1R w",
