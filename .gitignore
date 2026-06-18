@@ -10,8 +10,8 @@ src/temp_builds
 src/pikafish*
 src/-lstdc++.res
 
-# WASM build output
-wasm/
+# WASM build output (root only)
+/wasm/
 
 # Neural network for the NNUE evaluation
 **/*.nnue

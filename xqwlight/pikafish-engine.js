@@ -212,11 +212,8 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
     // 构建 UCI 命令
     var commands = [];
 
-    if (movesList && movesList.length > 0) {
-      commands.push("position fen " + fen + " moves " + movesList.join(" "));
-    } else {
-      commands.push("position fen " + fen);
-    }
+    // FEN 已完整描述局面，不需要附加 moves（否则引擎会从 FEN 局面重复走这些着法）
+    commands.push("position fen " + fen);
     commands.push("go movetime " + movetimeMs);
 
     // 发送 UCI 命令提醒
@@ -339,7 +336,8 @@ PikafishUciSearch.prototype._getFenWithMoves = function() {
           case 6: pieceChar = "P"; break;
         }
         if (pieceChar) {
-          fen += (side === 1 ? pieceChar.toLowerCase() : pieceChar);
+          // side=1 → pc 8-14 → RED (uppercase) ; side=2 → pc 16-22 → BLACK (lowercase)
+          fen += (side === 1 ? pieceChar : pieceChar.toLowerCase());
         }
       }
     }
