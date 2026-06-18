@@ -293,13 +293,18 @@ Board.prototype.response = function() {
   var finishSearch = function(mv) {
     try {
       if (mv > 0 && this_.pos.legalMove(mv)) {
-        // addMove 内部会调用 makeMove → postAddMove → response()
-        // 如果动画启用，postAddMove 在动画完成后调用
-        // response() 会根据 sdPlayer 重置 busy
+        appendUci('[调试] 尝试 addMove mv=' + mv + ' src=' + (mv & 255) + ' dst=' + (mv >> 8), 'dbg');
+        // 方案 A: 使用 addMove（含动画）
+        var savedAnimated = this_.animated;
+        // 先关闭动画强制走子，确保走子完成
+        this_.animated = false;
         this_.addMove(mv, true);
+        // 恢复动画设置（下次走子生效）
+        this_.animated = savedAnimated;
+        appendUci('[调试] addMove 完成', 'dbg');
       } else {
         if (mv > 0) {
-          appendUci('[错误] 引擎返回非法着法: mv=' + mv, 'err');
+          appendUci('[错误] 引擎返回非法着法: mv=' + mv + ' src=' + (mv & 255) + ' dst=' + (mv >> 8), 'err');
         } else {
           appendUci('[错误] 引擎返回空着法', 'err');
         }
@@ -307,7 +312,7 @@ Board.prototype.response = function() {
         this_.flushBoard();
       }
     } catch (e) {
-      appendUci('[错误] 走子回调异常: ' + (e.message || e), 'err');
+      appendUci('[错误] 走子回调异常: ' + (e.message || e) + '\n' + (e.stack || ''), 'err');
       this_.busy = false;
       this_.flushBoard();
     }
