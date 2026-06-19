@@ -102,6 +102,18 @@ self.onmessage = function(ev) {
       print: function(line) { stdout(line); },
       printErr: function(line) { stderr(line); },
     };
+    /* 接管 WASM 实例化：使用主线程传进来的 wasmBinary，避免 worker 内部
+     * 按相对路径 fetch pikafish.wasm（在 xqwlight/ 或 Blob URL 场景下会 404） */
+    self.Module["instantiateWasm"] = function(info, receiveInstance) {
+      debug("instantiateWasm: 使用主线程传入的 wasmBinary");
+      WebAssembly.instantiate(wasmBinary, info).then(function(output) {
+        receiveInstance(output.instance, output.module);
+      }).catch(function(err) {
+        debug("WASM instantiate 失败: " + err.message);
+        postMsg({ type: 'error', text: "WASM instantiate 失败: " + err.message });
+      });
+      return {};
+    };
     self.Module["stdin"]  = stdinByte;
     self.Module["stdout"] = null;
     self.Module["stderr"] = null;

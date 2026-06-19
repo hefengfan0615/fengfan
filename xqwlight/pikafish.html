@@ -687,7 +687,8 @@ function initEngine() {
     if (board.computerMove()) setTimeout(function() { board.response(); }, 300);
   }).catch(function(err) {
     document.getElementById('overlay').classList.add('hidden');
-    uciStatusEl.textContent = '引擎加载失败';
+    uciStatusEl.textContent = '引擎加载失败：' + (err && err.message ? err.message : String(err));
+    console.error('[initEngine] 引擎加载失败:', err);
   });
 }
 
