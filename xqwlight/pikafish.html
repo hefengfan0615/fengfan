@@ -170,6 +170,28 @@ label { font-size: 14px; }
   transition: width .2s ease;
 }
 .percent { margin-top: 10px; font-weight: 700; color: #1a3a6b; font-variant-numeric: tabular-nums; }
+/* 更新横幅 */
+.update-banner {
+  position: fixed; left: 50%; bottom: 24px;
+  transform: translateX(-50%);
+  background: #1a3a6b; color: #fff;
+  padding: 10px 16px; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  display: none; align-items: center; gap: 12px;
+  z-index: 10000; font-size: 14px;
+}
+.update-banner.show { display: flex; }
+.btn-update {
+  padding: 5px 12px; border: none; border-radius: 5px;
+  background: #4f7cff; color: #fff; font-weight: 600;
+  cursor: pointer; font-size: 13px;
+}
+.btn-update:hover { background: #3b67e8; }
+.btn-close {
+  background: transparent; color: #cbd5e1; border: none;
+  cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px;
+}
+.btn-close:hover { color: #fff; }
     --></style>
   </head>
   <body>
@@ -204,6 +226,9 @@ label { font-size: 14px; }
           </div>
           <div style="padding-top:2px">
             <input type="button" class="button" value="悔棋" onclick="retract_click()">
+          </div>
+          <div style="padding-top:2px">
+            <input type="button" class="button" value="强制刷新" onclick="forceRefresh()" id="btnForce">
           </div>
           <div style="height:12px"></div>
           <div class="label">引擎思考时间</div>
@@ -251,6 +276,15 @@ label { font-size: 14px; }
         <div class="percent" id="loadPct">0%</div>
       </div>
     </div>
+
+    <!-- Service Worker 更新横幅 -->
+    <div class="update-banner" id="updateBanner">
+      <span id="updateText">检测到引擎更新，刷新后使用最新版本。</span>
+      <button id="btnUpdate" class="btn-update">立即刷新</button>
+      <button class="btn-close" id="btnUpdateDismiss">&times;</button>
+    </div>
+
+    <!-- 强制刷新按钮（控制面板区域） -->
 
     <script type="text/javascript"><!--
 "use strict";
@@ -598,15 +632,81 @@ window.addEventListener('load', function() {
   // 初始化引擎
   initEngine();
 
-  // 注册 Service Worker — 离线缓存
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').then(function(reg) {
-      console.log('[SW] 已注册, scope=', reg.scope);
-    }).catch(function(err) {
-      console.warn('[SW] 注册失败:', err);
-    });
-  }
+  // 注册 Service Worker — 离线缓存 + 引擎更新通知
+  setupServiceWorker();
 });
+
+/* ---------- Service Worker 管理 ---------- */
+function setupServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+
+  var updateBanner = document.getElementById('updateBanner');
+  var updateTextEl = document.getElementById('updateText');
+  var btnUpdate = document.getElementById('btnUpdate');
+  var btnUpdateDismiss = document.getElementById('btnUpdateDismiss');
+  var updateDismissed = false;
+
+  function showBanner(msg) {
+    if (updateDismissed) return;
+    if (msg) updateTextEl.textContent = msg;
+    updateBanner.classList.add('show');
+  }
+  function hideBanner() { updateBanner.classList.remove('show'); }
+
+  btnUpdate.addEventListener('click', function() { location.reload(); });
+  btnUpdateDismiss.addEventListener('click', function() {
+    updateDismissed = true;
+    hideBanner();
+  });
+
+  // 接收 SW 推送的消息
+  navigator.serviceWorker.addEventListener('message', function(ev) {
+    var data = ev.data || {};
+    if (data.type === 'ENGINE_UPDATED') {
+      showBanner('引擎文件已更新（' + data.url.split('/').pop() + '），刷新后立即生效。');
+    } else if (data.type === 'CACHE_UPDATED') {
+      showBanner('检测到资源更新（' + data.url.split('/').pop() + '），刷新后可获取新版本。');
+    } else if (data.type === 'CACHE_CLEARED') {
+      location.reload();
+    }
+  });
+
+  navigator.serviceWorker.register('sw.js').then(function(reg) {
+    console.log('[SW] 已注册, scope=', reg.scope);
+
+    // 如果已有等待中的 SW（新版本已下载）
+    if (reg.waiting) {
+      showBanner('检测到新版本引擎，刷新后使用最新版本。');
+    }
+
+    // 检测新 SW 安装
+    reg.addEventListener('updatefound', function() {
+      var newWorker = reg.installing;
+      newWorker.addEventListener('statechange', function() {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          showBanner('检测到新版本引擎，刷新后使用最新版本。');
+        }
+      });
+    });
+
+    // 周期性检查更新（每 10 分钟）
+    setInterval(function() { reg.update().catch(function() {}); }, 10 * 60 * 1000);
+  }).catch(function(err) {
+    console.warn('[SW] 注册失败:', err);
+  });
+}
+
+/* 强制刷新：清空缓存 + 重新加载 */
+function forceRefresh() {
+  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+    location.reload();
+    return;
+  }
+  var btn = document.getElementById('btnForce');
+  btn.disabled = true;
+  btn.value = '清理中…';
+  navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+}
 
     --></script>
   </body>
