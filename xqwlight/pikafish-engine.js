@@ -97,6 +97,7 @@ function PikafishUciSearch(pos, hashLevel) {
   this.onUciStderr = null;
   this.onUciDebug = null;
   this.uciReminders = getRuleReminders();
+  this.lastInfo = null;      // 存储最后一次 info depth score nodes pv
 }
 
 /* 初始化：下载引擎 WASM/JS（如果未缓存）或接受已有缓存 */
@@ -247,6 +248,10 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
       switch (msg.type) {
         case 'stdout':
           self.stdoutBuffer.push(msg.text);
+          // 解析 info 行
+          if (msg.text.indexOf('info ') === 0) {
+            self._parseInfo(msg.text);
+          }
           if (self.onUciStdout) self.onUciStdout(msg.text);
           if (msg.text.indexOf('bestmove ') === 0) {
             self.bestmove = msg.text;
@@ -315,6 +320,43 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
       originalReject(err);
     };
   });
+};
+
+/* 从 stdout 中解析 info depth/score/nodes/pv 并存储到 lastInfo */
+PikafishUciSearch.prototype._parseInfo = function(line) {
+  if (line.indexOf('info ') !== 0) return;
+  // 只处理包含 pv 的 info 行
+  if (line.indexOf(' pv ') < 0) return;
+  var self = this;
+  var info = { depth: '?', score: '?', nodes: '?', pv: [] };
+
+  // depth N
+  var m = line.match(/\bdepth\s+(\d+)/);
+  if (m) info.depth = m[1];
+
+  // score cp N 或 score mate N
+  var m2 = line.match(/\bscore\s+(cp|mate)\s+([-\d]+)/);
+  if (m2) {
+    if (m2[1] === 'mate') {
+      info.score = '#' + m2[2];
+    } else {
+      var cp = parseInt(m2[2]);
+      info.score = (cp >= 0 ? '+' : '') + cp;
+    }
+  }
+
+  // nodes N
+  var m3 = line.match(/\bnodes\s+(\d+)/);
+  if (m3) info.nodes = m3[1];
+
+  // pv ... (从 pv 开始到行尾)
+  var pvIdx = line.indexOf(' pv ');
+  if (pvIdx >= 0) {
+    var pvStr = line.substring(pvIdx + 4).trim();
+    info.pv = pvStr.split(/\s+/).filter(function(s) { return s.length >= 4; });
+  }
+
+  self.lastInfo = info;
 };
 
 /* 从 stdout 中解析 bestmove */

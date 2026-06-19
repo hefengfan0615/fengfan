@@ -49,7 +49,7 @@ body {
 .controls-wrapper {
   flex: 0 0 160px;
 }
-.uci-panel {
+.info-panel {
   flex: 0 0 340px;
   max-width: 100%;
 }
@@ -85,8 +85,8 @@ label { font-size: 14px; }
 #container {
   display: inline-block;
 }
-/* UCI 输出面板 */
-.uci-panel .panel-title {
+/* UCI 输出面板 → 引擎信息面板 */
+.info-panel .panel-title {
   font-size: 16px;
   font-weight: bold;
   color: #1a3a6b;
@@ -95,33 +95,50 @@ label { font-size: 14px; }
   align-items: center;
   gap: 8px;
 }
-.uci-panel .panel-title .badge {
+.info-panel .panel-title .badge {
   font-size: 11px;
   background: #e8f0fe;
   color: #1a3a6b;
   padding: 2px 8px;
   border-radius: 10px;
 }
-.uci-output {
-  background: #0f172a;
+.engine-info {
+  background: linear-gradient(135deg, #0f172a 0%, #1a2340 100%);
   color: #d1e0ff;
-  border-radius: 8px;
-  padding: 12px;
-  height: 450px;
-  overflow-y: auto;
-  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-all;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC","JetBrains Mono",monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  border: 1px solid #2a3a6a;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  min-height: 54px;
 }
-.uci-output .out { color: #d1e0ff; }
-.uci-output .in  { color: #7ee2a8; }
-.uci-output .err { color: #ff9aa8; }
-.uci-output .sys { color: #9cb3ff; font-style: italic; }
-.uci-output .rule { color: #f4c77a; }
-.uci-output .best { color: #ffd700; font-weight: bold; }
-.uci-output .dbg { color: #888; }
+.info-line {
+  color: #7ee2a8;
+  letter-spacing: 0.3px;
+}
+.info-line .highlight-score {
+  color: #ffd700;
+  font-weight: bold;
+}
+.pv-box {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.pv-label {
+  color: #ffd700;
+  font-weight: bold;
+  flex-shrink: 0;
+  letter-spacing: 1px;
+}
+.pv-moves {
+  color: #d1e0ff;
+  word-break: break-all;
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
 .uci-status {
   margin-top: 6px;
   font-size: 12px;
@@ -206,20 +223,22 @@ label { font-size: 14px; }
           </select></div>
         </div>
 
-        <!-- UCI 输出面板 -->
-        <div class="uci-panel">
-          <div class="panel-title">
-            UCI 引擎通信
-            <span class="badge">遵守棋规</span>
-            <span style="margin-left:auto;font-size:12px;font-weight:normal;">
-              <a href="#" onclick="clearUciOutput();return false;" style="color:#666;">清空</a>
-            </span>
-          </div>
-          <div class="uci-output" id="uciOutput">
-            <span class="sys">[系统] 等待引擎启动...</span>
-          </div>
-          <div class="uci-status" id="uciStatus">引擎未启动</div>
+        <!-- 引擎信息面板 -->
+      <div class="info-panel">
+        <div class="panel-title">
+          引擎分析
+          <span class="badge">遵守棋规</span>
         </div>
+        <div class="engine-info" id="engineInfo">
+          <div class="info-line" id="infoLine">等待引擎...</div>
+          <div class="pv-box" id="pvBox">
+            <span class="pv-label">PV</span>
+            <span class="pv-moves" id="pvMoves"></span>
+          </div>
+        </div>
+        <div class="uci-status" id="uciStatus">引擎未启动</div>
+        <div id="uciOutput" style="display:none;"></div>
+      </div>
       </div>
     </div>
 
@@ -266,16 +285,89 @@ var LIMIT_DEPTH = 64;
 var uciOutputEl = document.getElementById('uciOutput');
 var uciStatusEl = document.getElementById('uciStatus');
 
-function appendUci(text, cls) {
-  var span = document.createElement('span');
-  if (cls) span.className = cls;
-  span.textContent = text + '\n';
-  uciOutputEl.appendChild(span);
-  uciOutputEl.scrollTop = uciOutputEl.scrollHeight;
+/* ---------- UCI → 中文棋谱 ---------- */
+var CN_PIECE_R = { K:'帅', A:'仕', B:'相', N:'马', R:'车', C:'炮', P:'兵' };
+var CN_PIECE_B = { K:'将', A:'士', B:'象', N:'马', R:'车', C:'炮', P:'卒' };
+var CN_NUM_R = ['一','二','三','四','五','六','七','八','九'];
+var CN_NUM_B = ['１','２','３','４','５','６','７','８','９'];
+
+function uciToChinese(uci, pos) {
+  if (!uci || uci.length < 4) return uci;
+  var sf = uci.charCodeAt(0) - 97, sr = uci.charCodeAt(1) - 48;
+  var df = uci.charCodeAt(2) - 97, dr = uci.charCodeAt(3) - 48;
+  var sqSrc = (sf + 3) + ((12 - sr) << 4);
+  var pc = pos.squares[sqSrc];
+  if (!pc) return uci;
+  var pt = pc & 7, side = pc >> 3;
+  var isRed = (side === 1);
+  var names = isRed ? CN_PIECE_R : CN_PIECE_B;
+  var nums = isRed ? CN_NUM_R : CN_NUM_B;
+  var pcChar = ['K','A','B','N','R','C','P'][pt];
+  var pName = names[pcChar] || uci;
+  var srcFile = isRed ? (9 - sf) : (sf + 1);
+  var dstFile = isRed ? (9 - df) : (df + 1);
+  var steps = Math.abs(dr - sr);
+  var dir;
+  if (isRed) {
+    dir = (dr > sr) ? '进' : (dr < sr) ? '退' : '平';
+  } else {
+    dir = (dr < sr) ? '进' : (dr > sr) ? '退' : '平';
+  }
+  var target;
+  if (dir === '平') {
+    target = nums[dstFile - 1];
+  } else if (pt === 3 || pt === 1 || pt === 2) {
+    // 马、仕(士)、相(象)：目标列
+    target = nums[dstFile - 1];
+  } else {
+    target = nums[Math.min(steps - 1, 8)];
+  }
+  return pName + nums[srcFile - 1] + dir + target;
 }
 
-function clearUciOutput() {
-  uciOutputEl.textContent = '';
+function pvToChinese(pvMoves, pos) {
+  if (!pvMoves || pvMoves.length === 0) return '';
+  // 遍历 PV，应用每步棋并转为中文
+  var result = [];
+  var p = pos;
+  for (var i = 0; i < pvMoves.length; i++) {
+    var cn = uciToChinese(pvMoves[i], p);
+    if (cn.length < 4) cn = pvMoves[i];
+    result.push(cn);
+    // 应用此步到棋盘，用于后续着法的上下文
+    var xqw = uciToXqwMove(pvMoves[i]);
+    if (xqw > 0) p.makeMove(xqw);
+  }
+  // 撤销所有着法
+  for (var i = pvMoves.length - 1; i >= 0; i--) {
+    var xqw = uciToXqwMove(pvMoves[i]);
+    if (xqw > 0) p.undoMakeMove();
+  }
+  return result.join('　');
+}
+
+/* ---------- 显示引擎信息 ---------- */
+function showEngineInfo(info) {
+  var infoLineEl = document.getElementById('infoLine');
+  var pvMovesEl = document.getElementById('pvMoves');
+  if (!info || !info.depth) {
+    infoLineEl.textContent = '等待引擎...';
+    pvMovesEl.textContent = '';
+    return;
+  }
+  infoLineEl.innerHTML = 'depth=<span class="highlight-score">' + info.depth +
+    '</span>　score=<span class="highlight-score">' + info.score +
+    '</span>　nodes=' + info.nodes;
+  if (info.pv && info.pv.length > 0) {
+    var cnPv = pvToChinese(info.pv, board.pos);
+    pvMovesEl.textContent = cnPv;
+  } else {
+    pvMovesEl.textContent = '';
+  }
+}
+
+function appendUci(text, cls) {
+  // UCI 面板已隐藏，保留空函数以防调用
 }
 
 function setLoadProgress(percent, text) {
@@ -295,81 +387,55 @@ board.setSearch(0);  // 不使用内置搜索，用 Pikafish 代替
 board.millis = 1000;
 board.computer = 1;
 
-// 覆盖 response 方法 — 使用 Pikafish UCI 引擎（异步版本）
-Board.prototype.response = function() {
-  if (this.search == null || !this.computerMove()) {
-    this.busy = false;
-    return;
-  }
-  this.thinking.style.visibility = "visible";
-  this.busy = true;
-  var this_ = this;
-  appendUci('[系统] 引擎开始思考...', 'sys');
-  uciStatusEl.textContent = '引擎思考中...';
-
-  var finishSearch = function(mv) {
-    try {
-      appendUci('[调试] finishSearch 收到 mv=' + mv, 'dbg');
-      if (mv <= 0) {
-        appendUci('[错误] 引擎返回空着法 mv=' + mv, 'err');
-        this_.busy = false;
-        this_.flushBoard();
-        return;
-      }
-
-      // 1) 先检查 legalMove
-      if (!this_.pos.legalMove(mv)) {
-        appendUci('[错误] legalMove 失败: mv=' + mv + ' src=' + (mv & 255) + ' dst=' + (mv >> 8), 'err');
-        this_.busy = false;
-        this_.flushBoard();
-        return;
-      }
-      appendUci('[调试] legalMove 通过', 'dbg');
-
-      // 2) 方案A: 用 addMove（非动画）
-      var savedAnimated = this_.animated;
-      this_.animated = false;
-      appendUci('[调试] 调用 addMove...', 'dbg');
-      this_.addMove(mv, true);
-      this_.animated = savedAnimated;
-      appendUci('[调试] addMove 返回', 'dbg');
-
-      // 3) 强制刷新棋盘 — 确保界面更新
-      this_.flushBoard();
-      appendUci('[调试] flushBoard 完成', 'dbg');
-
-      // 4) 确保 busy 标志被重置（addMove/postAddMove/response 链应该已处理，
-      //    但作为安全措施显式设置）
-      this_.busy = false;
-      this_.sqSelected = 0;
-
-      // 5) 验证棋盘状态
-      var sqSrc = mv & 255;
-      var sqDst = mv >> 8;
-      appendUci('[调试] 走子后 squares[src]=' + this_.pos.squares[sqSrc] + ' squares[dst]=' + this_.pos.squares[sqDst], 'dbg');
-      appendUci('[调试] mvLast=' + this_.mvLast + ' sdPlayer=' + this_.pos.sdPlayer + ' busy=' + this_.busy, 'dbg');
-
-    } catch (e) {
-      appendUci('[错误] finishSearch 异常: ' + (e.message || e), 'err');
-      appendUci('[错误] stack: ' + (e.stack || '无'), 'err');
-      this_.busy = false;
-      this_.flushBoard();
+// 覆盖 response 方法 — 使用 Pikafish UCI 引擎（异步，带动画）
+  Board.prototype.response = function() {
+    if (this.search == null || !this.computerMove()) {
+      this.busy = false;
+      return;
     }
-    this_.thinking.style.visibility = "hidden";
-    uciStatusEl.textContent = '引擎就绪';
-  };
+    this.thinking.style.visibility = "visible";
+    this.busy = true;
+    var this_ = this;
+    uciStatusEl.textContent = '引擎思考中...';
 
-  setTimeout(function() {
-    if (this_.search && typeof this_.search.searchMain === 'function') {
-      this_.search.searchMain(LIMIT_DEPTH, this_.millis, finishSearch);
-    } else {
-      appendUci('[错误] 搜索对象未就绪', 'err');
-      this_.busy = false;
+    var finishSearch = function(mv) {
+      try {
+        if (mv <= 0) {
+          this_.busy = false;
+          this_.flushBoard();
+          return;
+        }
+        if (!this_.pos.legalMove(mv)) {
+          this_.busy = false;
+          this_.flushBoard();
+          return;
+        }
+        // 显示引擎分析信息
+        if (pikafishSearch && pikafishSearch.lastInfo) {
+          showEngineInfo(pikafishSearch.lastInfo);
+        }
+        // AI 走棋 — 启用动画（让 addMove 自然走动画流程）
+        this_.addMove(mv, true);
+        // addMove 在动画模式下立即返回，postAddMove 在动画完成后调用
+        // postAddMove → response() 会在动画完成后自动重置 busy
+      } catch (e) {
+        this_.busy = false;
+        this_.flushBoard();
+      }
       this_.thinking.style.visibility = "hidden";
-      uciStatusEl.textContent = '引擎未就绪';
-    }
-  }, 50);
-};
+      uciStatusEl.textContent = '引擎就绪';
+    };
+
+    setTimeout(function() {
+      if (this_.search && typeof this_.search.searchMain === 'function') {
+        this_.search.searchMain(LIMIT_DEPTH, this_.millis, finishSearch);
+      } else {
+        this_.busy = false;
+        this_.thinking.style.visibility = "hidden";
+        uciStatusEl.textContent = '引擎未就绪';
+      }
+    }, 50);
+  };
 
 // 覆盖 onAddMove — 更新走法列表
 board.onAddMove = function() {
@@ -402,7 +468,6 @@ function createOption(text, value, ie8) {
 function level_change() {
   var levels = [1000, 3000, 5000, 10000];
   board.millis = levels[selLevel.selectedIndex] || 1000;
-  appendUci('[系统] 引擎思考时间设为 ' + (board.millis / 1000) + ' 秒', 'sys');
 }
 
 function restart_click() {
@@ -410,20 +475,6 @@ function restart_click() {
   selMoveList.selectedIndex = 0;
   board.computer = 1 - selMoveMode.selectedIndex;
   board.restart(STARTUP_FEN[selHandicap.selectedIndex]);
-  clearUciOutput();
-  appendUci('[系统] 新对局开始', 'sys');
-  if (board.computer === 0) {
-    appendUci('[系统] 电脑执红（先行）', 'sys');
-  } else if (board.computer === 1) {
-    appendUci('[系统] 电脑执黑（后行）', 'sys');
-  } else {
-    appendUci('[系统] 双人对弈模式', 'sys');
-  }
-  // 显示棋规提醒
-  var reminders = (typeof getRuleReminders === 'function') ? getRuleReminders() : [];
-  for (var i = 0; i < reminders.length; i++) {
-    appendUci(reminders[i], 'rule');
-  }
   uciStatusEl.textContent = '引擎就绪';
 }
 
@@ -506,20 +557,13 @@ function initEngine() {
     // 创建 PikafishUciSearch
     pikafishSearch = new PikafishUciSearch(board.pos, 16);
     pikafishSearch.onUciStdout = function(text) {
-      // 自动分类输出
-      var cls = 'out';
-      if (text.indexOf('[UCI→]') === 0 || text.indexOf('[UCI←]') === 0) cls = 'in';
-      else if (text.indexOf('[棋规]') === 0) cls = 'rule';
-      else if (text.indexOf('[错误]') === 0) cls = 'err';
-      else if (text.indexOf('[系统]') === 0) cls = 'sys';
-      else if (text.indexOf('bestmove') === 0) cls = 'best';
-      appendUci(text, cls);
+      // 引擎输出 — 仅内部使用（已不显示到 UI）
     };
     pikafishSearch.onUciStderr = function(text) {
-      appendUci('[stderr] ' + text, 'err');
+      console.warn('[pikafish] ' + text);
     };
     pikafishSearch.onUciDebug = function(text) {
-      appendUci('[调试] ' + text, 'dbg');
+      // 调试信息
     };
 
     pikafishSearch.wasmBinary = assets.wasmBinary;
@@ -528,78 +572,17 @@ function initEngine() {
     // 测试引擎通信
     return pikafishSearch.startEngine();
   }).then(function() {
-    // 引擎就绪
     board.search = pikafishSearch;
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎就绪';
-    appendUci('[系统] Pikafish 引擎已就绪！', 'sys');
-    appendUci('', 'sys');
-    // 显示棋规提醒
-    var reminders = getRuleReminders();
-    for (var i = 0; i < reminders.length; i++) {
-      appendUci(reminders[i], 'rule');
-    }
-    appendUci('', 'sys');
-    appendUci('[系统] 点击棋盘走棋，引擎将自动响应', 'sys');
 
-    // 运行自我诊断
-    runDiagnostics();
-
-    // 如果电脑先走，启动思考
     if (board.computerMove()) {
       setTimeout(function() { board.response(); }, 300);
     }
   }).catch(function(err) {
     document.getElementById('overlay').classList.add('hidden');
-    appendUci('[错误] 引擎初始化失败: ' + err.message, 'err');
     uciStatusEl.textContent = '引擎加载失败';
   });
-}
-
-/* ---------- 自我诊断 ---------- */
-function runDiagnostics() {
-  try {
-    appendUci('═══════════════════════════════════', 'sys');
-    appendUci('[诊断] 开始自我诊断...', 'sys');
-
-    // 1) 测试坐标转换
-    var testUci = "h2e2";
-    var xqwMove = uciToXqwMove(testUci);
-    var backToUci = xqwMoveToUci(xqwMove);
-    appendUci('[诊断] uciToXqwMove("h2e2")=' + xqwMove + ' → xqwMoveToUci()="' + backToUci + '" ' + (testUci === backToUci ? '✓' : '✗'), 'sys');
-    appendUci('[诊断]   sqSrc=' + (xqwMove & 255) + ' sqDst=' + (xqwMove >> 8), 'sys');
-
-    // 2) 测试 FEN 生成
-    var fenData = pikafishSearch._getFenWithMoves();
-    appendUci('[诊断] FEN: ' + fenData.fen, 'sys');
-
-    // 对比 board.pos.toFen()
-    var nativeFen = board.pos.toFen();
-    appendUci('[诊断] pos.toFen(): ' + nativeFen, 'sys');
-    appendUci('[诊断] FEN 匹配: ' + (fenData.fen === nativeFen ? '✓' : '✗'), 'sys');
-
-    // 3) 测试生成 FEN 中第一个着法的 legalMove
-    if (fenData.moves.length > 0) {
-      var firstMove = uciToXqwMove(fenData.moves[0]);
-      var legal = board.pos.legalMove(firstMove);
-      appendUci('[诊断] moves[0]=' + fenData.moves[0] + ' legalMove=' + legal, 'sys');
-    }
-
-    // 4) 测试引擎搜索
-    appendUci('[诊断] 执行快捷搜索测试 (200ms)...', 'sys');
-    pikafishSearch.searchUci(fenData.fen, fenData.moves, 200).then(function(mv) {
-      appendUci('[诊断] 搜索成功 mv=' + mv, 'sys');
-      appendUci('[诊断]  src=' + (mv & 255) + ' dst=' + (mv >> 8), 'sys');
-      appendUci('[诊断]  legalMove=' + board.pos.legalMove(mv), 'sys');
-      appendUci('═══════════════════════════════════', 'sys');
-    }).catch(function(err) {
-      appendUci('[诊断] 搜索失败: ' + err.message, 'err');
-      appendUci('═══════════════════════════════════', 'sys');
-    });
-  } catch (e) {
-    appendUci('[诊断] 异常: ' + (e.message || e), 'err');
-    appendUci('═══════════════════════════════════', 'sys');
-  }
 }
 
 /* ---------- 页面加载 ---------- */
