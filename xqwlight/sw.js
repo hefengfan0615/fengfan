@@ -118,9 +118,9 @@ self.addEventListener("fetch", function (event) {
                 }
                 return cache.put(req, resp.clone()).then(function () { return resp; });
               }
-              return cached || resp;
+              return cached || resp || new Response("Engine unavailable", { status: 503 });
             })
-            .catch(function () { return cached; });
+            .catch(function () { return cached || new Response("Engine unavailable", { status: 503 }); });
 
           return cached || networkUpdate;
         });
@@ -136,9 +136,9 @@ self.addEventListener("fetch", function (event) {
               if (resp && resp.ok) {
                 return cache.put(req, resp.clone()).then(function () { return resp; });
               }
-              return resp;
+              return cached || resp || new Response("Resource unavailable", { status: 503 });
             })
-            .catch(function () { return cached; });
+            .catch(function () { return cached || new Response("Resource unavailable", { status: 503 }); });
 
           return cached || networkUpdate;
         });
