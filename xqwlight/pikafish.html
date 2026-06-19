@@ -294,6 +294,12 @@ body {
           <span class="sec">秒</span>
         </div>
 
+        <div class="setting-row" style="flex-wrap:wrap; padding-bottom:4px">
+          <span class="label">FEN</span>
+          <input type="text" id="fenInput" spellcheck="false"
+            style="flex:1; min-width:120px; padding:4px 6px; border:1px solid #d0d5dd; border-radius:4px; font-size:12px; font-family:monospace">
+        </div>
+
         <div class="setting-row">
           <span class="label">音效</span>
           <span class="toggle" id="soundToggle" onclick="pendSound()"></span>
@@ -461,6 +467,8 @@ Board.prototype.response = function() {
 
   var finishSearch = function(mv) {
     try {
+      // 设置打开时跳过走棋（防止引擎搜索完成干扰设置后的新对局）
+      if (_settingsOpen) { this_.busy = false; this_.flushBoard(); return; }
       if (mv <= 0) { this_.busy = false; this_.flushBoard(); return; }
       if (!this_.pos.legalMove(mv)) { this_.busy = false; this_.flushBoard(); return; }
       if (pikafishSearch && pikafishSearch.lastInfo) showEngineInfo(pikafishSearch.lastInfo);
@@ -535,16 +543,19 @@ function flipBoard() {
  * 取消 → 丢弃修改
  */
 var settingsOverlay = document.getElementById('settingsOverlay');
-var _pending = {};  // 暂存修改
+var _pending = {};
+var _settingsOpen = false;  // 设置打开时引擎搜索完成跳过走棋
 
 function openSettings() {
+  _settingsOpen = true;
   // 保存当前状态到 _pending（UI 只反映 _pending）
   _pending = {
     compRed: board.compRed,
     compBlack: board.compBlack,
     millis: board.millis,
     sound: !!board.sound,
-    animated: !!board.animated
+    animated: !!board.animated,
+    fen: board.pos.toFen()
   };
   // 同步 UI 到 _pending
   document.getElementById('compRedToggle').className = 'toggle' + (_pending.compRed ? ' on' : '');
@@ -553,6 +564,7 @@ function openSettings() {
   document.getElementById('timeDisplay').textContent = (_pending.millis / 1000).toFixed(1);
   document.getElementById('soundToggle').className = 'toggle' + (_pending.sound ? ' on' : '');
   document.getElementById('animToggle').className = 'toggle' + (_pending.animated ? ' on' : '');
+  document.getElementById('fenInput').value = _pending.fen;
   settingsOverlay.classList.add('open');
 }
 
@@ -589,10 +601,12 @@ document.getElementById('settingsOk').addEventListener('click', function() {
   board.animated = _pending.animated;
 
   settingsOverlay.classList.remove('open');
+  _settingsOpen = false;
 
-  // 重启对局以应用新设置
+  // 重启对局以应用新设置（使用自定义 FEN 或默认开局）
+  var fen = (_pending.fen && _pending.fen.trim()) || STARTUP_FEN[0];
   selMoveList.options.length = 1;
-  board.restart(STARTUP_FEN[0]);
+  board.restart(fen);
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
   else uciStatusEl.textContent = '引擎就绪';
 });
@@ -600,10 +614,11 @@ document.getElementById('settingsOk').addEventListener('click', function() {
 // 取消：丢弃修改，仅关闭
 document.getElementById('settingsCancel').addEventListener('click', function() {
   settingsOverlay.classList.remove('open');
+  _settingsOpen = false;
 });
 
 settingsOverlay.addEventListener('click', function(e) {
-  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+  if (e.target === settingsOverlay) { settingsOverlay.classList.remove('open'); _settingsOpen = false; }
 });
 
 /* ---------- 引擎初始化 ---------- */
