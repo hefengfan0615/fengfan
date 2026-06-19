@@ -49,6 +49,10 @@ function Board_layout(board, scale) {
     style.top  = Math.round(bTop  + (RANK_Y(sq) - 3) * sqSize) + "px";
     style.width  = Math.round(sqSize) + "px";
     style.height = Math.round(sqSize) + "px";
+    // 选中框（mask, oos.gif）以 backgroundImage 渲染，需显式声明
+    // backgroundSize，否则缩放后遮罩仍是原图 57x57 的尺寸
+    style.backgroundSize = "100% 100%";
+    style.backgroundRepeat = "no-repeat";
   }
   var tSize = Math.round(THINKING_SIZE * scale);
   var tLeft = Math.round((board.container.offsetWidth  - tSize) / 2);

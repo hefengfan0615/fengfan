@@ -10,7 +10,7 @@
 
 "use strict";
 
-const CACHE_NAME = "pikafish-cache-v1";
+const CACHE_NAME = "pikafish-cache-20260619";
 
 /* 需要预缓存的静态资源（相对 SW 的 URL） */
 const ASSETS = [

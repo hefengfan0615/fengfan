@@ -8,7 +8,7 @@
 
 "use strict";
 
-var CACHE_NAME = "pikafish-xqwlight-v2";
+var CACHE_NAME = "pikafish-xqwlight-20260619";
 
 /* 引擎文件路径（需要 Network First 策略，保证即时更新） */
 var ENGINE_FILES = [
