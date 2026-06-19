@@ -113,8 +113,12 @@ body {
 }
 .engine-panel .eng-line .hl { color: #ffd700; font-weight: bold; }
 .engine-panel .eng-pv {
-  color: #d1e0ff; word-break: break-all; white-space: pre-wrap;
+  color: #d1e0ff; word-break: keep-all; white-space: pre-wrap;
   line-height: 1.8; display: block; margin-top: 1px;
+}
+.engine-panel .eng-pv .pv-move {
+  display: inline-block; white-space: nowrap;
+  margin-right: 0.4em;
 }
 .engine-panel .eng-status {
   color: #8a9bc0; font-size: 12px; margin-top: 3px;
@@ -391,6 +395,37 @@ function uciToChinese(uci, pos) {
   if (dir === '平') { target = nums[dstFile - 1]; }
   else if (pt === 3 || pt === 1 || pt === 2) { target = nums[dstFile - 1]; }
   else { target = nums[Math.min(steps - 1, 8)]; }
+
+  // 同列相同棋子：使用前/后作区分
+  // 扫描同列的相同颜色棋子，判断当前棋子是"前"还是"后"
+  var srcX = sf + 3;
+  var srcY = 12 - sr;
+  var hasSame = false, frontCount = 0, backCount = 0;
+  for (var y = 3; y <= 12; y++) {
+    if (y === srcY) continue;
+    var sq2 = srcX + (y << 4);
+    var pc2 = pos.squares[sq2];
+    if (pc2 === pc) {
+      hasSame = true;
+      // Red: front = smaller y (靠近对手); Black: front = larger y (靠近对手)
+      if (isRed) {
+        if (srcY < y) frontCount++; else backCount++;
+      } else {
+        if (srcY > y) frontCount++; else backCount++;
+      }
+    }
+  }
+  if (hasSame) {
+    // backCount 表示"比当前棋子更靠前的其他同色同种棋子数"
+    // backCount===0 ⇒ 当前是最前端的棋子 → 前
+    // backCount>0 ⇒ 当前不是最前端 → 后
+    // 当有 3+ 子同列时，中子的 frontCount>0 && backCount>0 → 回退标准记法
+    if (frontCount > 0 && backCount > 0) {
+      return pName + nums[srcFile - 1] + dir + target;
+    }
+    return (backCount === 0 ? '前' : '后') + pName + dir + target;
+  }
+
   return pName + nums[srcFile - 1] + dir + target;
 }
 
@@ -400,7 +435,7 @@ function pvToChinese(pvMoves, pos) {
   for (var i = 0; i < pvMoves.length; i++) {
     var cn = uciToChinese(pvMoves[i], p);
     if (cn.length < 4) cn = pvMoves[i];
-    result.push(cn);
+    result.push('<span class="pv-move">' + cn + '</span>');
     var xqw = uciToXqwMove(pvMoves[i]);
     if (xqw > 0) p.makeMove(xqw);
   }
@@ -408,7 +443,7 @@ function pvToChinese(pvMoves, pos) {
     var xqw = uciToXqwMove(pvMoves[i]);
     if (xqw > 0) p.undoMakeMove();
   }
-  return result.join('　');
+  return result.join('');
 }
 
 /* ---------- 引擎信息显示 ---------- */
@@ -424,9 +459,9 @@ function showEngineInfo(info) {
     '</span>  score=<span class="hl">' + info.score +
     '</span>  nodes=<span class="hl">' + info.nodes + '</span>';
   if (info.pv && info.pv.length > 0) {
-    pvMovesEl.textContent = pvToChinese(info.pv, board.pos);
+    pvMovesEl.innerHTML = pvToChinese(info.pv, board.pos);
   } else {
-    pvMovesEl.textContent = '';
+    pvMovesEl.innerHTML = '';
   }
 }
 
