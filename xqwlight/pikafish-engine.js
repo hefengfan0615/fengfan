@@ -98,6 +98,7 @@ function PikafishUciSearch(pos, hashLevel) {
   this.onUciDebug = null;
   this.uciReminders = getRuleReminders();
   this.lastInfo = null;      // 存储最后一次 info depth score nodes pv
+  this.onInfo = null;        // info 更新回调（实时）
 }
 
 /* 初始化：下载引擎 WASM/JS（如果未缓存）或接受已有缓存 */
@@ -357,6 +358,11 @@ PikafishUciSearch.prototype._parseInfo = function(line) {
   }
 
   self.lastInfo = info;
+
+  // 实时通知外部（UI 更新）
+  if (self.onInfo) {
+    self.onInfo(info);
+  }
 };
 
 /* 从 stdout 中解析 bestmove */

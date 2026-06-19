@@ -125,7 +125,9 @@ Board.prototype.playSound = function(soundFile) {
     return;
   }
   try {
-    new Audio(this.sounds + soundFile + ".wav").play();
+    new Audio(this.sounds + soundFile + ".wav").play().catch(function(e) {
+      // é™é»˜å¿½ç•¥éŸ³é¢‘åŠ è½½å¤±è´¥ï¼ˆå¦‚æ–‡ä»¶ä¸å­˜åœ¨ã€æ ¼å¼ä¸æ”¯æŒï¼‰
+    });
   } catch (e) {
     this.dummy.innerHTML= "<embed src=\"" + this.sounds + soundFile +
         ".wav\" hidden=\"true\" autostart=\"true\" loop=\"false\" />";
@@ -242,15 +244,15 @@ Board.prototype.postAddMove = function(mv, computerMove) {
     if (vlRep > -WIN_VALUE && vlRep < WIN_VALUE) {
       this.playSound("draw");
       this.result = RESULT_DRAW;
-      alertDelay("Ë«·½²»±ä×÷ºÍ£¬ĞÁ¿àÁË£¡");
+      alertDelay("åŒæ–¹ä¸å˜ä½œå’Œï¼Œè¾›è‹¦äº†ï¼");
     } else if (computerMove == (vlRep < 0)) {
       this.playSound("loss");
       this.result = RESULT_LOSS;
-      alertDelay("³¤´ò×÷¸º£¬Çë²»ÒªÆøÄÙ£¡");
+      alertDelay("é•¿æ‰“ä½œè´Ÿï¼Œè¯·ä¸è¦æ°”é¦ï¼");
     } else {
       this.playSound("win");
       this.result = RESULT_WIN;
-      alertDelay("³¤´ò×÷¸º£¬×£ºØÄãÈ¡µÃÊ¤Àû£¡");
+      alertDelay("é•¿æ‰“ä½œè´Ÿï¼Œç¥è´ºä½ å–å¾—èƒœåˆ©ï¼");
     }
     this.postAddMove2();
     this.busy = false;
@@ -268,7 +270,7 @@ Board.prototype.postAddMove = function(mv, computerMove) {
     if (!hasMaterial) {
       this.playSound("draw");
       this.result = RESULT_DRAW;
-      alertDelay("Ë«·½¶¼Ã»ÓĞ½ø¹¥Æå×ÓÁË£¬ĞÁ¿àÁË£¡");
+      alertDelay("åŒæ–¹éƒ½æ²¡æœ‰è¿›æ”»æ£‹å­äº†ï¼Œè¾›è‹¦äº†ï¼");
       this.postAddMove2();
       this.busy = false;
       return;
@@ -284,7 +286,7 @@ Board.prototype.postAddMove = function(mv, computerMove) {
     if (!captured) {
       this.playSound("draw");
       this.result = RESULT_DRAW;
-      alertDelay("³¬¹ı×ÔÈ»ÏŞ×Å×÷ºÍ£¬ĞÁ¿àÁË£¡");
+      alertDelay("è¶…è¿‡è‡ªç„¶é™ç€ä½œå’Œï¼Œè¾›è‹¦äº†ï¼");
       this.postAddMove2();
       this.busy = false;
       return;
@@ -310,7 +312,7 @@ Board.prototype.postAddMove2 = function() {
 }
 
 Board.prototype.postMate = function(computerMove) {
-  alertDelay(computerMove ? "ÇëÔÙ½ÓÔÙÀ÷£¡" : "×£ºØÄãÈ¡µÃÊ¤Àû£¡");
+  alertDelay(computerMove ? "è¯·å†æ¥å†å‰ï¼" : "ç¥è´ºä½ å–å¾—èƒœåˆ©ï¼");
   this.postAddMove2();
   this.busy = false;
 }

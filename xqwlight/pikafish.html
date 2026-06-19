@@ -565,6 +565,10 @@ function initEngine() {
     pikafishSearch.onUciDebug = function(text) {
       // 调试信息
     };
+    // 实时引擎分析更新
+    pikafishSearch.onInfo = function(info) {
+      showEngineInfo(info);
+    };
 
     pikafishSearch.wasmBinary = assets.wasmBinary;
     pikafishSearch.engineJs = assets.engineJs;
