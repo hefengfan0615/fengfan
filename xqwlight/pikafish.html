@@ -83,6 +83,16 @@ body {
   background: #fff; min-height: 80px; max-height: 120px;
 }
 
+/* ---- 底部双栏 ---- */
+.bottom-row {
+  display: flex; gap: 10px; width: 100%; margin-top: 6px;
+}
+.bottom-left { flex: 3; min-width: 0; }   /* 60% */
+.bottom-right { flex: 2; min-width: 0; }  /* 40% */
+@media (max-width: 480px) {
+  .bottom-row { flex-direction: column; }
+}
+
 /* ---- 引擎分析 ---- */
 .engine-panel {
   width: 100%;
@@ -228,19 +238,23 @@ body {
         <button onclick="forceRefresh()" id="btnForce">强制刷新</button>
       </div>
 
-      <!-- 步骤 -->
-      <div class="move-list-wrap">
-        <select id="selMoveList" size="5" onchange="moveList_change()">
-          <option value="0">=== 开始 ===</option>
-        </select>
-      </div>
-
-      <!-- 引擎分析 -->
-      <div class="engine-panel">
-        <div class="eng-version" id="engineVersion"></div>
-        <div class="eng-line" id="infoLine">等待引擎...</div>
-        <span class="eng-pv" id="pvMoves"></span>
-        <div class="eng-status" id="uciStatus">引擎未启动</div>
+      <!-- 底部双栏：引擎分析(左60%) + 步骤(右40%) -->
+      <div class="bottom-row">
+        <div class="bottom-left">
+          <div class="engine-panel">
+            <div class="eng-version" id="engineVersion"></div>
+            <div class="eng-line" id="infoLine">等待引擎...</div>
+            <span class="eng-pv" id="pvMoves"></span>
+            <div class="eng-status" id="uciStatus">引擎未启动</div>
+          </div>
+        </div>
+        <div class="bottom-right">
+          <div class="move-list-wrap">
+            <select id="selMoveList" size="8" onchange="moveList_change()">
+              <option value="0">=== 开始 ===</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -250,12 +264,12 @@ body {
         <h2>设置</h2>
 
         <div class="setting-row">
-          <span class="label">电脑执棋</span>
-          <div class="radio-group">
-            <label><input type="radio" name="computerSide" value="0" onchange="setComputerSide(0)"> 红方</label>
-            <label><input type="radio" name="computerSide" value="1" checked onchange="setComputerSide(1)"> 黑方</label>
-            <label><input type="radio" name="computerSide" value="-1" onchange="setComputerSide(-1)"> 关闭</label>
-          </div>
+          <span class="label">电脑执红</span>
+          <span class="toggle" id="compRedToggle" onclick="toggleCompRed()"></span>
+        </div>
+        <div class="setting-row">
+          <span class="label">电脑执黑</span>
+          <span class="toggle on" id="compBlackToggle" onclick="toggleCompBlack()"></span>
         </div>
 
         <div class="setting-row">
@@ -401,12 +415,23 @@ function setLoadProgress(percent, text) {
 var board = new Board(container, "images/", "sounds/");
 board.setSearch(0);
 board.millis = 3000;
-board.computer = 1;
-board.displayFlipped = false; // 显示翻转（不影响 AI 走棋方）
+board.computer = 1;          // 兼容 xqwlight，由 compRed/compBlack 驱动
+board.compRed = false;       // 电脑执红
+board.compBlack = true;      // 电脑执黑（默认）
+board.displayFlipped = false;
 
-// 覆盖 flipped 方法：支持 display-only 翻转
+// 重写 computerMove：支持四种模式
+board.computerMove = function() {
+  if (board.compRed && board.compBlack) return true;           // 自动对弈
+  if (!board.compRed && !board.compBlack) return false;        // 双人对弈
+  if (board.compRed && this.pos.sdPlayer == 0) return true;    // 仅电脑执红
+  if (board.compBlack && this.pos.sdPlayer == 1) return true;  // 仅电脑执黑
+  return false;
+};
+
+// 覆盖 flipped：compRed 且 !compBlack 时才翻转（电脑执红 → 红在下方）
 board.flipped = function(sq) {
-  var flip = this.computer == 0; // 原始逻辑
+  var flip = board.compRed && !board.compBlack;
   if (board.displayFlipped) flip = !flip;
   return flip ? SQUARE_FLIP(sq) : sq;
 };
@@ -459,10 +484,11 @@ function createOption(text, value, ie8) {
 function restart_click() {
   selMoveList.options.length = 1;
   selMoveList.selectedIndex = 0;
-  board.computer = 1 - (parseInt(document.querySelector('input[name="computerSide"]:checked').value) || 0);
   board.restart(STARTUP_FEN[0]);
   uciStatusEl.textContent = '引擎就绪';
   document.getElementById('engineVersion').textContent = engineVersion;
+  // 重新开始后如果轮到电脑走棋则触发
+  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
 }
 
 function retract_click() {
@@ -500,13 +526,24 @@ settingsOverlay.addEventListener('click', function(e) {
   if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
 });
 
-function setComputerSide(val) {
-  board.computer = parseInt(val);
-  if (board.computer >= 0) {
-    selMoveList.options.length = 1;
-    board.restart(STARTUP_FEN[0]);
-    if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
-  }
+function toggleCompRed() {
+  board.compRed = !board.compRed;
+  document.getElementById('compRedToggle').classList.toggle('on');
+  syncComputer();
+}
+
+function toggleCompBlack() {
+  board.compBlack = !board.compBlack;
+  document.getElementById('compBlackToggle').classList.toggle('on');
+  syncComputer();
+}
+
+// 同步电脑设置：重启对局并触发电脑走棋
+function syncComputer() {
+  selMoveList.options.length = 1;
+  board.restart(STARTUP_FEN[0]);
+  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
+  else uciStatusEl.textContent = '引擎就绪';
 }
 
 function setThinkTime(val) {
@@ -593,12 +630,12 @@ function initEngine() {
 
 /* ---------- 页面加载 ---------- */
 window.addEventListener('load', function() {
-  board.computer = 1;
   board.restart(STARTUP_FEN[0]);
   initEngine();
   setupServiceWorker();
   // 同步设置面板初始状态
   document.getElementById('timeDisplay').textContent = '3.0';
+  document.getElementById('compBlackToggle').classList.add('on');
 });
 
 /* ---------- Service Worker ---------- */
