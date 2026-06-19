@@ -911,7 +911,9 @@ Value Search::Worker::search(
         // Do not return unproven mate
         if (nullValue >= beta && !is_win(nullValue))
         {
-
+            if (nmpMinPly)
+                return nullValue;
+          
             assert(!nmpMinPly);  // Recursive verification is not allowed
 
             // Do verification search at high depths, with null move pruning disabled
