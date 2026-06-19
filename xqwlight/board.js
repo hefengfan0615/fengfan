@@ -35,6 +35,34 @@ var SQUARE_TOP = (BOARD_HEIGHT - SQUARE_SIZE * 10) >> 1;
 var THINKING_SIZE = 32;
 var THINKING_LEFT = (BOARD_WIDTH - THINKING_SIZE) >> 1;
 var THINKING_TOP = (BOARD_HEIGHT - THINKING_SIZE) >> 1;
+
+function Board_layout(board, scale) {
+  var bLeft = SQUARE_LEFT * scale;
+  var bTop = SQUARE_TOP * scale;
+  var sqSize = SQUARE_SIZE * scale;
+  for (var sq = 0; sq < 256; sq++) {
+    if (!IN_BOARD(sq)) continue;
+    var img = board.imgSquares[sq];
+    if (!img) continue;
+    var style = img.style;
+    style.left = Math.round(bLeft + (FILE_X(sq) - 3) * sqSize) + "px";
+    style.top  = Math.round(bTop  + (RANK_Y(sq) - 3) * sqSize) + "px";
+    style.width  = Math.round(sqSize) + "px";
+    style.height = Math.round(sqSize) + "px";
+  }
+  var tSize = Math.round(THINKING_SIZE * scale);
+  var tLeft = Math.round((board.container.offsetWidth  - tSize) / 2);
+  var tTop  = Math.round((board.container.offsetHeight - tSize) / 2);
+  board.thinking.style.width  = tSize + "px";
+  board.thinking.style.height = tSize + "px";
+  board.thinking.style.left   = tLeft + "px";
+  board.thinking.style.top    = tTop  + "px";
+}
+
+function Board_computeScale(board) {
+  var w = board.container.offsetWidth;
+  return w > 0 ? w / BOARD_WIDTH : 1;
+}
 var MAX_STEP = 8;
 var PIECE_NAME = [
   "oo", null, null, null, null, null, null, null,
@@ -75,12 +103,14 @@ function Board(container, images, sounds) {
   this.computer = -1;
   this.result = RESULT_UNKNOWN;
   this.busy = false;
+  this.container = container;
 
   var style = container.style;
   style.position = "relative";
-  style.width = BOARD_WIDTH + "px";
-  style.height = BOARD_HEIGHT + "px";
   style.background = "url(" + images + "board.jpg)";
+  style.backgroundRepeat = "no-repeat";
+  style.backgroundPosition = "center center";
+  style.backgroundSize = "100% 100%";
   var this_ = this;
   for (var sq = 0; sq < 256; sq ++) {
     if (!IN_BOARD(sq)) {
@@ -90,10 +120,6 @@ function Board(container, images, sounds) {
     var img = document.createElement("img");
     var style = img.style;
     style.position = "absolute";
-    style.left = SQ_X(sq);
-    style.top = SQ_Y(sq);
-    style.width = SQUARE_SIZE;
-    style.height = SQUARE_SIZE;
     style.zIndex = 0;
     img.onmousedown = function(sq_) {
       return function() {
@@ -109,13 +135,26 @@ function Board(container, images, sounds) {
   style = this.thinking.style;
   style.visibility = "hidden";
   style.position = "absolute";
-  style.left = THINKING_LEFT + "px";
-  style.top = THINKING_TOP + "px";
   container.appendChild(this.thinking);
 
   this.dummy = document.createElement("div");
   this.dummy.style.position = "absolute";
   container.appendChild(this.dummy);
+
+  // 布局
+  this.relayout = function() {
+    var scale = Board_computeScale(this_);
+    this_._scale = scale;
+    Board_layout(this_, scale);
+  };
+  this.relayout();
+  if (typeof window !== "undefined") {
+    var resizeTimer = null;
+    window.addEventListener("resize", function() {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function() { this_.relayout(); }, 50);
+    });
+  }
 
   this.flushBoard();
 }
@@ -164,12 +203,13 @@ Board.prototype.addMove = function(mv, computerMove) {
     return;
   }
 
+  var scale = this._scale || 1;
   var sqSrc = this.flipped(SRC(mv));
-  var xSrc = SQ_X(sqSrc);
-  var ySrc = SQ_Y(sqSrc);
+  var xSrc = Math.round((SQUARE_LEFT + (FILE_X(sqSrc) - 3) * SQUARE_SIZE) * scale);
+  var ySrc = Math.round((SQUARE_TOP  + (RANK_Y(sqSrc) - 3) * SQUARE_SIZE) * scale);
   var sqDst = this.flipped(DST(mv));
-  var xDst = SQ_X(sqDst);
-  var yDst = SQ_Y(sqDst);
+  var xDst = Math.round((SQUARE_LEFT + (FILE_X(sqDst) - 3) * SQUARE_SIZE) * scale);
+  var yDst = Math.round((SQUARE_TOP  + (RANK_Y(sqDst) - 3) * SQUARE_SIZE) * scale);
   var style = this.imgSquares[sqSrc].style;
   style.zIndex = 256;
   var step = MAX_STEP - 1;
@@ -219,7 +259,8 @@ Board.prototype.postAddMove = function(mv, computerMove) {
     sqMate = this.flipped(sqMate);
     var style = this.imgSquares[sqMate].style;
     style.zIndex = 256;
-    var xMate = SQ_X(sqMate);
+    var scale = this._scale || 1;
+    var xMate = Math.round((SQUARE_LEFT + (FILE_X(sqMate) - 3) * SQUARE_SIZE) * scale);
     var step = MAX_STEP;
     var this_ = this;
     var timer = setInterval(function() {

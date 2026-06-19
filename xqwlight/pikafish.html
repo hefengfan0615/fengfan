@@ -48,12 +48,14 @@ body {
   width: 100%; max-width: 560px;
 }
 #container {
-  display: inline-block;
-  max-width: 100%;
-}
-/* 缩放棋盘以适应小屏 */
-@media (max-width: 540px) {
-  #container { transform: scale(calc((100vw - 20px) / 521)); transform-origin: top left; }
+  display: block;
+  width: 100%;
+  max-width: 521px;
+  aspect-ratio: 521 / 577;
+  margin: 0 auto;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 100% 100%;
 }
 
 /* ---- 棋盘下方工具栏 ---- */
