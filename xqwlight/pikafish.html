@@ -525,7 +525,7 @@ board.onAddMove = function() {
   var counter = (board.pos.mvList.length >> 1);
   var space = (counter > 99 ? "    " : "   ");
   counter = (counter > 9 ? "" : " ") + counter + ".";
-  var text = (board.pos.sdPlayer == 0 ? space : counter) + move2Iccs(board.mvLast);
+  var text = (board.pos.sdPlayer == 0 ? space : counter) + move2Iccs(board.mvLast, board.pos);
   var value = "" + board.mvLast;
   try { selMoveList.add(createOption(text, value, false)); }
   catch (e) { selMoveList.add(createOption(text, value, true)); }
