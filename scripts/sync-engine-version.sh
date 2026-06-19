@@ -4,7 +4,7 @@
 #   1. 从 wasm/pikafish.wasm 里读取日期（如 20260619）。
 #   2. 追加当前 UTC 时间，生成唯一 ENGINE_VERSION（如 20260619-143052）。
 #   3. 把 wasm/js 复制到 xqwlight/wasm/。
-#   4. 更新 sw.js / index.html / pikafish.html / pikafish-engine.js 里的
+#   4. 更新 sw.js / pikafish.html / pikafish-engine.js 里的
 #      ENGINE_VERSION，确保用户每次访问都拿到最新构建。
 # ====================================================================
 set -euo pipefail
@@ -42,7 +42,6 @@ cp "$WASM" "$ROOT/xqwlight/wasm/pikafish.wasm"
 FILES=(
   "$ROOT/sw.js"
   "$ROOT/xqwlight/sw.js"
-  "$ROOT/index.html"
   "$ROOT/xqwlight/pikafish.html"
   "$ROOT/xqwlight/pikafish-engine.js"
 )

@@ -20,7 +20,6 @@ const CACHE_NAME = "pikafish-cache-" + SW_VERSION;
 /* 需要预缓存的静态资源（包含引擎文件） */
 const ASSETS = [
   "./",
-  "./index.html",
   "./worker.js",
   "./wasm/pikafish.js" + ENGINE_QUERY,
   "./wasm/pikafish.wasm" + ENGINE_QUERY
