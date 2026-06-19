@@ -3,8 +3,8 @@ name: Pikafish WASM
 on:
   push:
     branches:
-      - master
-
+      - main
+  workflow_dispatch: 
 env:
   EMSDK_PATH: /tmp/emsdk
 
