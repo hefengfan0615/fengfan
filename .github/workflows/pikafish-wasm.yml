@@ -82,6 +82,6 @@ jobs:
           git config user.name "Pikafish Bot"
           git config user.email "pikafish-bot@github.com"
           # Force-add wasm/ (listed in .gitignore) and sync frontend files
-          git add -f wasm/ xqwlight/wasm/ sw.js xqwlight/sw.js index.html xqwlight/pikafish.html xqwlight/pikafish-engine.js scripts/sync-engine-version.sh
+          git add -f wasm/ xqwlight/wasm/ sw.js xqwlight/sw.js xqwlight/pikafish.html xqwlight/pikafish-engine.js scripts/sync-engine-version.sh
           git commit -m "Update WASM build [skip ci]" || echo "No changes to commit"
           git push
