@@ -1,0 +1,13 @@
+{
+  "buildCommand": null,
+  "outputDirectory": "xqwlight",
+  "framework": null,
+  "headers": [
+    {
+      "source": "/(.*)\\.wasm",
+      "headers": [
+        { "key": "Content-Type", "value": "application/wasm" }
+      ]
+    }
+  ]
+}
