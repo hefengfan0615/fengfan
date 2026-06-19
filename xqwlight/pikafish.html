@@ -280,16 +280,16 @@ body {
 
         <div class="setting-row">
           <span class="label">电脑执红</span>
-          <span class="toggle" id="compRedToggle" onclick="toggleCompRed()"></span>
+          <span class="toggle" id="compRedToggle" onclick="pendCompRed()"></span>
         </div>
         <div class="setting-row">
           <span class="label">电脑执黑</span>
-          <span class="toggle on" id="compBlackToggle" onclick="toggleCompBlack()"></span>
+          <span class="toggle on" id="compBlackToggle" onclick="pendCompBlack()"></span>
         </div>
 
         <div class="setting-row">
           <span class="label">思考时间</span>
-          <input type="range" id="timeSlider" min="0.5" max="10" step="0.5" value="3" oninput="setThinkTime(this.value)">
+          <input type="range" id="timeSlider" min="0.5" max="10" step="0.5" value="3" oninput="pendThinkTime(this.value)">
           <span class="time-val" id="timeDisplay">3.0</span>
           <span class="sec">秒</span>
         </div>
