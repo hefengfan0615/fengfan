@@ -895,13 +895,13 @@ Value Search::Worker::search(
     }
 
     // Step 8. Null move search with verification search
-    if (cutNode && depth>=2 && ss->staticEval >= beta - 8 * depth - 50 * improving + 187 && !excludedMove
+    if (cutNode && ss->staticEval >= beta - 8 * depth - 50 * improving + 187 && !excludedMove
         && pos.major_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
-        Depth R = 2;
+        Depth R = 8 + depth / 3;
         do_null_move(pos, st, ss);
 
         Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
@@ -939,7 +939,7 @@ Value Search::Worker::search(
     // If we have a good enough capture and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 251 - 66 * improving;
-    if (depth >= 4
+    if (depth >= 3
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
         // probCut there
@@ -1056,7 +1056,7 @@ moves_loop:  // When in check, search starts here
                 mp.skip_quiet_moves();
 
             // Reduced depth of the next LMR search
-            int lmrDepth = newDepth;
+            int lmrDepth = newDepth - r / 1005;
 
             if (capture || givesCheck)
             {
@@ -1248,8 +1248,8 @@ moves_loop:  // When in check, search starts here
             {
                 // Adjust full-depth search based on LMR results - if the result was
                 // good enough search deeper, if it was bad enough search shallower.
-                const bool doDeeperSearch    = d < newDepth && value > bestValue;
-                const bool doShallowerSearch = value < bestValue;
+                const bool doDeeperSearch    = d < newDepth && value > bestValue + 60;
+                const bool doShallowerSearch = value < bestValue + 9;
 
                 newDepth += doDeeperSearch - doShallowerSearch;
 
@@ -1376,6 +1376,7 @@ moves_loop:  // When in check, search starts here
                     assert(value >= beta);  // Fail high
                     break;
                 }
+
 
                 assert(depth > 0);
                 alpha = value;  // Update alpha! Always alpha < beta
