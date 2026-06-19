@@ -1,22 +1,26 @@
 /* ====================================================================
  * Pikafish 象棋小巫师 — Service Worker
  *   预缓存所有静态资源，实现完全离线运行。
- *   引擎文件（WASM/JS）使用 Network First 策略 — 确保引擎更新后
- *   用户立即获取新版，仅在离线时回退到缓存。
+ *   引擎文件（WASM/JS）使用 Network First + cache:'reload' 策略 —
+ *   强制绕开浏览器 HTTP 缓存，确保引擎更新后用户立即获取新版。
  *   其他静态资源使用 Cache First + stale-while-revalidate。
+ *   资源 URL 带 ?v=ENGINE_VERSION 防止任何代理/CDN 缓存命中旧版。
  * ==================================================================== */
 
 "use strict";
 
-var CACHE_NAME = "pikafish-xqwlight-20260619";
+/* 引擎版本号：每次重新编译 WASM/JS 后必须同步更新 */
+var ENGINE_VERSION = "20260619";
+var CACHE_NAME = "pikafish-xqwlight-" + ENGINE_VERSION;
 
-/* 引擎文件路径（需要 Network First 策略，保证即时更新） */
+/* 引擎文件路径（注意：pathname 是绝对路径，形如 /xqwlight/wasm/pikafish.wasm，
+ * 不带 "./" 前缀，否则 indexOf 永远匹配不到） */
 var ENGINE_FILES = [
-  "./wasm/pikafish.js",
-  "./wasm/pikafish.wasm"
+  "/wasm/pikafish.js",
+  "/wasm/pikafish.wasm"
 ];
 
-/* 所有需要预缓存的静态资源 */
+/* 所有需要预缓存的静态资源（引擎文件带版本号，避免命中代理/CDN 旧缓存） */
 var ASSETS = [
   "./",
   "./pikafish.html",
@@ -26,9 +30,9 @@ var ASSETS = [
   "./cchess.js",
   "./pikafish-engine.js",
   "./worker.js",
-  /* -- 引擎文件也在预缓存列表中（用于离线回退） -- */
-  "./wasm/pikafish.js",
-  "./wasm/pikafish.wasm",
+  /* -- 引擎文件（带 ?v= 强绕 HTTP/代理 缓存） -- */
+  "./wasm/pikafish.js?v=" + ENGINE_VERSION,
+  "./wasm/pikafish.wasm?v=" + ENGINE_VERSION,
   /* -- 棋子/棋盘图片 -- */
   "./images/board.jpg",
   "./images/thinking.gif",
@@ -47,7 +51,7 @@ var ASSETS = [
   "./sounds/newgame.wav"
 ];
 
-/* 判断是否为引擎文件 */
+/* 判断是否为引擎文件（pathname 形如 /xqwlight/wasm/pikafish.wasm） */
 function isEngineFile(urlPath) {
   for (var i = 0; i < ENGINE_FILES.length; i++) {
     if (urlPath.indexOf(ENGINE_FILES[i]) >= 0) return true;
@@ -55,11 +59,24 @@ function isEngineFile(urlPath) {
   return false;
 }
 
-/* ---------- 安装：预缓存 + 跳过等待 ---------- */
+/* ---------- 安装：预缓存 + 跳过等待 ----------
+ * 关键点：用 fetch(url, { cache: "reload" }) 替代 cache.addAll，
+ * 强制绕开浏览器 HTTP 缓存（包括 304 协商缓存），确保 precache 永远是最新版本。
+ */
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(function (cache) { return cache.addAll(ASSETS); })
+      .then(function (cache) {
+        return Promise.all(ASSETS.map(function (url) {
+          return fetch(url, { cache: "reload" })
+            .then(function (resp) {
+              if (resp && resp.ok) {
+                return cache.put(url, resp);
+              }
+            })
+            .catch(function () { /* 单个资源失败不阻塞整体 */ });
+        }));
+      })
       .then(function () { return self.skipWaiting(); })
   );
 });
@@ -80,7 +97,7 @@ self.addEventListener("activate", function (event) {
 });
 
 /* ---------- 抓取 ----------
- * 引擎文件 → Network First（始终从网络获取，离线回退缓存）
+ * 引擎文件 → Network First + cache:"reload"（始终从网络拉取，绕开 HTTP 缓存）
  * 其他资源 → Cache First + stale-while-revalidate
  */
 self.addEventListener("fetch", function (event) {
@@ -91,34 +108,18 @@ self.addEventListener("fetch", function (event) {
   if (url.origin !== self.location.origin) return;
 
   if (isEngineFile(url.pathname)) {
-    /* ---- 引擎文件：Network First ---- */
+    /* ---- 引擎文件：Network First + cache:"reload" ---- */
     event.respondWith(
       caches.open(CACHE_NAME).then(function (cache) {
-        return fetch(req, { cache: "no-cache" }).then(function (resp) {
+        return fetch(req, { cache: "reload" }).then(function (resp) {
           if (resp && resp.ok) {
-            // 检测是否与缓存不同
-            return cache.match(req).then(function (cached) {
-              var oldTag = cached
-                ? (cached.headers.get("etag") || cached.headers.get("last-modified") || "")
-                : "";
-              var newTag = resp.headers.get("etag") || resp.headers.get("last-modified") || "";
-              cache.put(req, resp.clone());
-              if (cached && oldTag !== newTag) {
-                // 通知页面引擎已更新
-                self.clients.matchAll({ type: "window", includeUncontrolled: true })
-                  .then(function (clients) {
-                    clients.forEach(function (c) {
-                      c.postMessage({ type: "ENGINE_UPDATED", url: req.url });
-                    });
-                  });
-              }
-              return resp;
-            });
+            cache.put(req, resp.clone());
+            return resp;
           }
-          // 网络失败 → 回退缓存
+          // 网络返回非 2xx → 回退缓存
           return cache.match(req);
         }).catch(function () {
-          // 完全离线
+          // 离线/网络异常 → 回退缓存
           return cache.match(req);
         });
       })

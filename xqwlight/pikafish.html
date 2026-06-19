@@ -351,10 +351,14 @@ window.addEventListener('unhandledrejection', function(ev) {
 var STARTUP_FEN = [
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w",
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKAB1R w",
-  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/R1BAKAB1R w",
+  "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/9/1C5C1/9/R1BAKAB1R w",
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/9/1C5C1/9/RN2K2NR w",
 ];
 var LIMIT_DEPTH = 64;
+/* 引擎版本：与 sw.js / xqwlight/sw.js 的 ENGINE_VERSION 保持一致。
+ * 改动此值即可让所有用户重新拉取最新引擎资源。 */
+var ENGINE_VERSION = "20260619";
+var ENGINE_QUERY = "?v=" + ENGINE_VERSION;
 var uciStatusEl = document.getElementById('uciStatus');
 var engineVersion = '';
 
@@ -633,7 +637,7 @@ function initEngine() {
   setLoadProgress(0, '正在下载引擎二进制...');
   var base = getAssetBaseXqw();
 
-  fetch(base + 'wasm/pikafish.wasm').then(function(resp) {
+  fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY).then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
     var total = parseInt(resp.headers.get('content-length') || '0', 10);
     if (!resp.body) return resp.arrayBuffer();
@@ -656,7 +660,7 @@ function initEngine() {
     return readChunk();
   }).then(function(wasmBinary) {
     setLoadProgress(95, '正在下载引擎脚本...');
-    return fetch(base + 'wasm/pikafish.js').then(function(resp) {
+    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY).then(function(resp) {
       if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
       return resp.text().then(function(jsText) { return { wasmBinary: wasmBinary, engineJs: jsText }; });
     });

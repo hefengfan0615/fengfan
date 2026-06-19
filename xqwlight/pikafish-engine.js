@@ -113,16 +113,20 @@ PikafishUciSearch.prototype.init = function(wasmBinary, engineJs) {
   return self._downloadEngine();
 };
 
+/* 引擎版本：与 sw.js / xqwlight/sw.js 保持一致 */
+var ENGINE_VERSION = "20260619";
+var ENGINE_QUERY = "?v=" + ENGINE_VERSION;
+
 PikafishUciSearch.prototype._downloadEngine = function() {
   var self = this;
   var base = getAssetBaseXqw();
 
-  return fetch(base + 'wasm/pikafish.wasm').then(function(resp) {
+  return fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY).then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
     return resp.arrayBuffer();
   }).then(function(ab) {
     self.wasmBinary = ab;
-    return fetch(base + 'wasm/pikafish.js');
+    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY);
   }).then(function(resp) {
     if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
     return resp.text();
