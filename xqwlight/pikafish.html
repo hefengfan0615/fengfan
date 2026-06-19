@@ -157,6 +157,21 @@ body {
   background: #1a3a6b; color: #fff; font-size: 14px; cursor: pointer;
 }
 .settings-close-row button:hover { background: #2a4a7b; }
+.settings-actions {
+  display: flex; gap: 10px; justify-content: center; margin-top: 16px;
+}
+.settings-actions button {
+  flex: 1; padding: 9px 0; border: none; border-radius: 8px;
+  font-size: 14px; cursor: pointer; max-width: 120px;
+}
+.settings-actions button.primary {
+  background: #1a3a6b; color: #fff;
+}
+.settings-actions button.primary:hover { background: #2a4a7b; }
+#settingsCancel {
+  background: #f0f2f5; color: #333;
+}
+#settingsCancel:hover { background: #e2e5ea; }
 
 /* ---- 加载覆盖层 ---- */
 #overlay {
@@ -281,16 +296,17 @@ body {
 
         <div class="setting-row">
           <span class="label">音效</span>
-          <span class="toggle on" id="soundToggle" onclick="toggleSound()"></span>
+          <span class="toggle" id="soundToggle" onclick="pendSound()"></span>
         </div>
 
         <div class="setting-row">
           <span class="label">动画</span>
-          <span class="toggle on" id="animToggle" onclick="toggleAnim()"></span>
+          <span class="toggle" id="animToggle" onclick="pendAnim()"></span>
         </div>
 
-        <div class="settings-close-row">
-          <button id="settingsClose">关闭</button>
+        <div class="settings-actions">
+          <button id="settingsCancel">取消</button>
+          <button id="settingsOk" class="primary">确定</button>
         </div>
       </div>
     </div>
@@ -513,57 +529,82 @@ function flipBoard() {
   board.flushBoard();
 }
 
-/* ---------- 设置面板 ---------- */
+/* ---------- 设置面板 ----------
+ * 打开后引擎暂停，修改暂存到 _pending
+ * 确定 → 应用并重启对局
+ * 取消 → 丢弃修改
+ */
 var settingsOverlay = document.getElementById('settingsOverlay');
+var _pending = {};  // 暂存修改
 
-document.getElementById('settingsBtn').addEventListener('click', function() {
+function openSettings() {
+  // 保存当前状态到 _pending（UI 只反映 _pending）
+  _pending = {
+    compRed: board.compRed,
+    compBlack: board.compBlack,
+    millis: board.millis,
+    sound: !!board.sound,
+    animated: !!board.animated
+  };
+  // 同步 UI 到 _pending
+  document.getElementById('compRedToggle').className = 'toggle' + (_pending.compRed ? ' on' : '');
+  document.getElementById('compBlackToggle').className = 'toggle' + (_pending.compBlack ? ' on' : '');
+  document.getElementById('timeSlider').value = (_pending.millis / 1000).toFixed(1);
+  document.getElementById('timeDisplay').textContent = (_pending.millis / 1000).toFixed(1);
+  document.getElementById('soundToggle').className = 'toggle' + (_pending.sound ? ' on' : '');
+  document.getElementById('animToggle').className = 'toggle' + (_pending.animated ? ' on' : '');
   settingsOverlay.classList.add('open');
-});
-document.getElementById('settingsClose').addEventListener('click', function() {
-  settingsOverlay.classList.remove('open');
-});
-settingsOverlay.addEventListener('click', function(e) {
-  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
-});
+}
 
-function toggleCompRed() {
-  board.compRed = !board.compRed;
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+
+// 暂存修改函数（仅改 _pending + UI，不动 board）
+function pendCompRed() {
+  _pending.compRed = !_pending.compRed;
   document.getElementById('compRedToggle').classList.toggle('on');
-  syncComputer();
 }
-
-function toggleCompBlack() {
-  board.compBlack = !board.compBlack;
+function pendCompBlack() {
+  _pending.compBlack = !_pending.compBlack;
   document.getElementById('compBlackToggle').classList.toggle('on');
-  syncComputer();
+}
+function pendThinkTime(val) {
+  _pending.millis = Math.round(parseFloat(val) * 1000);
+  document.getElementById('timeDisplay').textContent = parseFloat(val).toFixed(1);
+}
+function pendSound() {
+  _pending.sound = !_pending.sound;
+  document.getElementById('soundToggle').classList.toggle('on');
+}
+function pendAnim() {
+  _pending.animated = !_pending.animated;
+  document.getElementById('animToggle').classList.toggle('on');
 }
 
-// 同步电脑设置：重启对局并触发电脑走棋
-function syncComputer() {
+// 确定：应用修改 → 重启对局
+document.getElementById('settingsOk').addEventListener('click', function() {
+  board.compRed = _pending.compRed;
+  board.compBlack = _pending.compBlack;
+  board.millis = _pending.millis;
+  board.setSound(_pending.sound);
+  board.animated = _pending.animated;
+
+  settingsOverlay.classList.remove('open');
+
+  // 重启对局以应用新设置
   selMoveList.options.length = 1;
   board.restart(STARTUP_FEN[0]);
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
   else uciStatusEl.textContent = '引擎就绪';
-}
+});
 
-function setThinkTime(val) {
-  var ms = Math.round(parseFloat(val) * 1000);
-  board.millis = ms;
-  document.getElementById('timeDisplay').textContent = parseFloat(val).toFixed(1);
-}
+// 取消：丢弃修改，仅关闭
+document.getElementById('settingsCancel').addEventListener('click', function() {
+  settingsOverlay.classList.remove('open');
+});
 
-function toggleSound() {
-  var t = document.getElementById('soundToggle');
-  board.setSound(!board.sound);
-  t.classList.toggle('on');
-}
-
-function toggleAnim() {
-  var t = document.getElementById('animToggle');
-  board.animated = !board.animated;
-  document.getElementById('chkAnimated').checked = board.animated;
-  t.classList.toggle('on');
-}
+settingsOverlay.addEventListener('click', function(e) {
+  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+});
 
 /* ---------- 引擎初始化 ---------- */
 var pikafishSearch = null;
