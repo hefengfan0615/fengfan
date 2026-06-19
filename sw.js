@@ -1,21 +1,29 @@
 /* ====================================================================
  * Pikafish WASM — Service Worker
- *   引擎文件（WASM/JS）不缓存，每次访问都重新下载，确保永远最新。
+ *   引擎文件（WASM/JS）也缓存，使用 Cache First + stale-while-revalidate。
+ *   后台会用 no-cache 重新校验引擎；若服务器返回新版（URL 的 v= 参数
+ *   或内容发生变化），自动更新缓存并通过 postMessage 通知页面刷新。
  *   其他资源仍然预缓存，保证离线可用。
  *   每次安装新 SW 都会清理旧缓存。
  * ==================================================================== */
 
 "use strict";
 
+/* 引擎版本：workflow 每次构建会自动同步为最新 wasm 的版本字符串 */
+const ENGINE_VERSION = "20260619-050548";
+const ENGINE_QUERY   = "?v=" + ENGINE_VERSION;
+
 /* 每次更新此版本号即可强制浏览器安装新 SW，清理旧缓存 */
-const SW_VERSION = "20260619";
+const SW_VERSION = ENGINE_VERSION;
 const CACHE_NAME = "pikafish-cache-" + SW_VERSION;
 
-/* 需要预缓存的静态资源（引擎文件不在这里） */
+/* 需要预缓存的静态资源（包含引擎文件） */
 const ASSETS = [
   "./",
   "./index.html",
-  "./worker.js"
+  "./worker.js",
+  "./wasm/pikafish.js" + ENGINE_QUERY,
+  "./wasm/pikafish.wasm" + ENGINE_QUERY
 ];
 
 /* 判断是否为引擎文件 */
@@ -24,7 +32,7 @@ function isEngineFile(urlPath) {
          urlPath.indexOf("/wasm/pikafish.wasm") >= 0;
 }
 
-/* ---------- 安装：预缓存非引擎资源 + 跳过等待 ---------- */
+/* ---------- 安装：预缓存资源 + 跳过等待 ---------- */
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -48,8 +56,18 @@ self.addEventListener("activate", function (event) {
   );
 });
 
+/* 通知所有页面：有新版本可用 */
+function notifyUpdate() {
+  self.clients.matchAll({ type: "window" }).then(function (clients) {
+    clients.forEach(function (client) {
+      client.postMessage({ type: "CACHE_UPDATED" });
+    });
+  });
+}
+
 /* ---------- 抓取 ----------
- * 引擎文件 → 不缓存，直接 fetch，不带缓存
+ * 引擎文件 → Cache First + stale-while-revalidate
+ *             命中缓存立即返回，同时后台 fetch 校验并自动替换新版。
  * 其他资源 → Cache First + stale-while-revalidate
  */
 self.addEventListener("fetch", function (event) {
@@ -60,9 +78,32 @@ self.addEventListener("fetch", function (event) {
   if (url.origin !== self.location.origin) return;
 
   if (isEngineFile(url.pathname)) {
-    /* ---- 引擎文件：不缓存，每次重新下载 ---- */
+    /* ---- 引擎文件：Cache First + 后台重新校验 ---- */
     event.respondWith(
-      fetch(req, { cache: "no-store" })
+      caches.open(CACHE_NAME).then(function (cache) {
+        return cache.match(req).then(function (cached) {
+          var networkUpdate = fetch(req, { cache: "no-cache" })
+            .then(function (resp) {
+              if (resp && resp.ok) {
+                /* 如果和缓存里的不一样，就替换并通知刷新 */
+                if (cached) {
+                  var h1 = cached.headers.get("ETag") || cached.headers.get("Last-Modified");
+                  var h2 = resp.headers.get("ETag") || resp.headers.get("Last-Modified");
+                  if (h1 !== h2) {
+                    notifyUpdate();
+                  }
+                } else {
+                  notifyUpdate();
+                }
+                return cache.put(req, resp.clone()).then(function () { return resp; });
+              }
+              return cached || resp;
+            })
+            .catch(function () { return cached; });
+
+          return cached || networkUpdate;
+        });
+      })
     );
   } else {
     /* ---- 其他资源：Cache First + stale-while-revalidate ---- */

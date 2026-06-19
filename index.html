@@ -220,7 +220,7 @@ let engineReady     = false;  // engine 已启动并 ready
 
 /* 引擎版本：与 sw.js / xqwlight/sw.js 的 ENGINE_VERSION 保持一致。
  * 改动此值即可让所有用户重新拉取最新引擎资源。 */
-const ENGINE_VERSION = "20260619";
+const ENGINE_VERSION = "20260619-050548";
 const ENGINE_QUERY   = "?v=" + ENGINE_VERSION;
 
 /* ---------- DOM 辅助 ---------- */
@@ -254,7 +254,7 @@ function getAssetBase() {
 async function downloadWasmWithProgress() {
   const url = getAssetBase() + 'wasm/pikafish.wasm' + ENGINE_QUERY;
   appendLine('[调试] 下载 WASM: ' + url, 'dbg');
-  const resp = await fetch(url, { cache: "no-store" });
+  const resp = await fetch(url);
   if (!resp.ok) throw new Error('下载失败：HTTP ' + resp.status);
   const totalBytes = parseInt(resp.headers.get('content-length') || '0', 10);
   if (!resp.body) {
@@ -288,7 +288,7 @@ async function downloadWasmWithProgress() {
 async function downloadEngineJs() {
   const url = getAssetBase() + 'wasm/pikafish.js' + ENGINE_QUERY;
   appendLine('[调试] 下载引擎 JS: ' + url, 'dbg');
-  const resp = await fetch(url, { cache: "no-store" });
+  const resp = await fetch(url);
   if (!resp.ok) throw new Error('加载 pikafish.js 失败：HTTP ' + resp.status);
   const txt = await resp.text();
   appendLine('[调试] JS 文本 ' + (txt.length/1024).toFixed(1) + ' KB', 'dbg');

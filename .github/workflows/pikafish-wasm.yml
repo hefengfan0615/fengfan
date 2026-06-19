@@ -70,12 +70,18 @@ jobs:
           echo "=== Running bench search test ==="
           node pikafish.js bench 16 1 1
 
+      - name: Sync engine version to frontend
+        working-directory: ./
+        run: |
+          chmod +x scripts/sync-engine-version.sh
+          scripts/sync-engine-version.sh
+
       - name: Commit WASM to master branch
         working-directory: ./
         run: |
           git config user.name "Pikafish Bot"
           git config user.email "pikafish-bot@github.com"
-          # Force-add wasm/ (listed in .gitignore)
-          git add -f wasm/
+          # Force-add wasm/ (listed in .gitignore) and sync frontend files
+          git add -f wasm/ xqwlight/wasm/ sw.js xqwlight/sw.js index.html xqwlight/pikafish.html xqwlight/pikafish-engine.js scripts/sync-engine-version.sh
           git commit -m "Update WASM build [skip ci]" || echo "No changes to commit"
           git push
