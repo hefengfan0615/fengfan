@@ -10,7 +10,7 @@
 "use strict";
 
 /* 引擎版本：workflow 每次构建会自动同步为最新 wasm 的版本字符串 */
-const ENGINE_VERSION = "20260619-062059";
+const ENGINE_VERSION = "20260619-063219";
 const ENGINE_QUERY   = "?v=" + ENGINE_VERSION;
 
 /* 每次更新此版本号即可强制浏览器安装新 SW，清理旧缓存 */
