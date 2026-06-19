@@ -1,7 +1,7 @@
 <html>
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pikafish 象棋小巫师</title>
     <script type="text/javascript" src="book.js"></script>
     <script type="text/javascript" src="position.js"></script>
@@ -9,142 +9,146 @@
     <script type="text/javascript" src="cchess.js"></script>
     <script type="text/javascript" src="pikafish-engine.js"></script>
     <style type="text/css"><!--
-body {
-  background: #f0f2f5;
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; min-height: 100vh;
   font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
-  margin: 0;
-  padding: 0;
+  background: #f0f2f5;
   color: #333;
 }
-* { box-sizing: border-box; }
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
+body {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 10px;
 }
-.header {
-  text-align: center;
-  font-size: 28px;
-  font-weight: bold;
-  color: #1a3a6b;
-  padding: 16px 0 8px;
-  letter-spacing: 2px;
+/* ---- 顶栏 ---- */
+.header-bar {
+  width: 100%; max-width: 560px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 4px 10px;
 }
-.header small {
-  font-size: 14px;
-  font-weight: normal;
-  color: #666;
-  display: block;
-  margin-top: 4px;
-}
-.game-area {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 20px;
-}
-.board-wrapper {
-  flex: 0 0 auto;
-}
-.controls-wrapper {
-  flex: 0 0 160px;
-}
-.info-panel {
-  flex: 0 0 340px;
-  max-width: 100%;
-}
-div.label {
-  font-size: 14px;
-  padding: 2px;
-}
-select {
-  font-size: 14px;
-  width: 150px;
-  padding: 2px;
-}
-option { font-size: 14px; }
-input.button {
-  font-size: 14px;
-  width: 150px;
-  padding: 6px 10px;
-  margin: 4px 0;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  cursor: pointer;
-}
-input.button:hover { background: #e8f0fe; }
-input.button.primary {
-  background: #1a3a6b;
-  color: #fff;
-  border-color: #1a3a6b;
-}
-input.button.primary:hover { background: #2a4a7b; }
-label { font-size: 14px; }
-.checkbox { vertical-align: middle; }
-#container {
-  display: inline-block;
-}
-/* UCI 输出面板 → 引擎信息面板 */
-.info-panel .panel-title {
-  font-size: 16px;
-  font-weight: bold;
-  color: #1a3a6b;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.info-panel .panel-title .badge {
-  font-size: 11px;
-  background: #e8f0fe;
-  color: #1a3a6b;
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-.engine-info {
-  background: linear-gradient(135deg, #0f172a 0%, #1a2340 100%);
-  color: #d1e0ff;
-  border-radius: 10px;
-  padding: 12px 16px;
-  font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC","JetBrains Mono",monospace;
-  font-size: 13px;
-  line-height: 1.7;
-  border: 1px solid #2a3a6a;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  min-height: 54px;
-}
-.info-line {
-  color: #7ee2a8;
-  letter-spacing: 0.3px;
-}
-.info-line .highlight-score {
-  color: #ffd700;
-  font-weight: bold;
-}
-.pv-box {
-  display: flex;
-  gap: 6px;
-  margin-top: 2px;
-}
-.pv-label {
-  color: #ffd700;
-  font-weight: bold;
-  flex-shrink: 0;
+.header-bar h1 {
+  font-size: 20px; font-weight: bold; color: #1a3a6b;
   letter-spacing: 1px;
 }
-.pv-moves {
-  color: #d1e0ff;
-  word-break: break-all;
-  white-space: pre-wrap;
-  line-height: 1.8;
+.header-bar .subtitle {
+  font-size: 11px; color: #888; font-weight: normal;
 }
-.uci-status {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #666;
+.btn-gear {
+  width: 36px; height: 36px; border: none; border-radius: 8px;
+  background: #fff; font-size: 20px; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
 }
-/* 加载覆盖层 */
+.btn-gear:hover { background: #e8f0fe; }
+
+/* ---- 棋盘 ---- */
+.board-section {
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; max-width: 560px;
+}
+#container {
+  display: inline-block;
+  max-width: 100%;
+}
+/* 缩放棋盘以适应小屏 */
+@media (max-width: 540px) {
+  #container { transform: scale(calc((100vw - 20px) / 521)); transform-origin: top left; }
+}
+
+/* ---- 棋盘下方工具栏 ---- */
+.board-toolbar {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  margin: 10px 0 6px; width: 100%;
+}
+.board-toolbar button {
+  padding: 7px 14px; border: 1px solid #ccc; border-radius: 6px;
+  background: #fff; font-size: 13px; cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+  white-space: nowrap;
+}
+.board-toolbar button:hover { background: #e8f0fe; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.board-toolbar button.primary {
+  background: #1a3a6b; color: #fff; border-color: #1a3a6b;
+}
+.board-toolbar button.primary:hover { background: #2a4a7b; }
+
+/* ---- 步骤下拉 ---- */
+.move-list-wrap {
+  width: 100%; margin: 4px 0 8px;
+}
+.move-list-wrap select {
+  width: 100%; padding: 5px 8px; border: 1px solid #d0d5dd;
+  border-radius: 6px; font-size: 13px; font-family: inherit;
+  background: #fff; min-height: 80px; max-height: 120px;
+}
+
+/* ---- 引擎分析 ---- */
+.engine-panel {
+  width: 100%;
+  background: linear-gradient(135deg, #0f172a 0%, #1a2340 100%);
+  color: #d1e0ff; border-radius: 10px; padding: 10px 14px;
+  font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC","JetBrains Mono",monospace;
+  font-size: 13px; line-height: 1.7;
+  border: 1px solid #2a3a6a; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  margin-top: 2px; min-height: 48px;
+}
+.engine-panel .eng-version {
+  color: #9cb3ff; font-size: 12px; margin-bottom: 2px;
+}
+.engine-panel .eng-line {
+  color: #7ee2a8; letter-spacing: 0.3px;
+}
+.engine-panel .eng-line .hl { color: #ffd700; font-weight: bold; }
+.engine-panel .eng-pv {
+  color: #d1e0ff; word-break: break-all; white-space: pre-wrap;
+  line-height: 1.8; display: block; margin-top: 1px;
+}
+.engine-panel .eng-status {
+  color: #8a9bc0; font-size: 12px; margin-top: 3px;
+}
+
+/* ---- 设置覆盖层 ---- */
+.settings-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(15,23,42,.6); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; visibility: hidden;
+  transition: opacity .2s, visibility .2s;
+}
+.settings-overlay.open { opacity: 1; visibility: visible; }
+.settings-panel {
+  background: #fff; border-radius: 14px; padding: 24px 28px;
+  width: 320px; max-width: 92vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.settings-panel h2 {
+  font-size: 18px; color: #1a3a6b; margin-bottom: 18px;
+  text-align: center;
+}
+.setting-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid #f0f2f5;
+}
+.setting-row:last-of-type { border-bottom: none; }
+.setting-row .label { flex: 0 0 80px; font-size: 14px; color: #444; }
+.setting-row .radio-group { display: flex; gap: 12px; }
+.setting-row .radio-group label { font-size: 13px; cursor: pointer; }
+.setting-row input[type="range"] { flex: 1; }
+.setting-row .time-val { font-size: 14px; min-width: 28px; text-align: right; font-weight: bold; color: #1a3a6b; }
+.setting-row .sec { font-size: 13px; color: #666; }
+.setting-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+.setting-row .checkbox-label { font-size: 13px; cursor: pointer; }
+.settings-close-row {
+  text-align: center; margin-top: 14px;
+}
+.settings-close-row button {
+  padding: 8px 28px; border: none; border-radius: 8px;
+  background: #1a3a6b; color: #fff; font-size: 14px; cursor: pointer;
+}
+.settings-close-row button:hover { background: #2a4a7b; }
+
+/* ---- 加载覆盖层 ---- */
 #overlay {
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(15,23,42,.78);
@@ -153,117 +157,127 @@ label { font-size: 14px; }
 }
 #overlay.hidden { display: none; }
 .loader {
-  background: #fff;
-  padding: 28px 32px;
-  border-radius: 12px;
-  width: 380px;
-  box-shadow: 0 20px 50px rgba(0,0,0,.25);
-  text-align: center;
+  background: #fff; padding: 28px 32px; border-radius: 12px;
+  width: 360px; box-shadow: 0 20px 50px rgba(0,0,0,.25); text-align: center;
 }
 .loader h2 { margin: 0 0 10px; font-size: 17px; color: #1a3a6b; }
-.loader p  { margin: 0 0 14px; font-size: 13px; color: #64748b; min-height: 20px; }
+.loader p { margin: 0 0 14px; font-size: 13px; color: #64748b; min-height: 20px; }
 .bar { width: 100%; height: 10px; background: #eef1f8; border-radius: 99px; overflow: hidden; }
 .bar > div {
-  height: 100%;
-  width: 0%;
+  height: 100%; width: 0%;
   background: linear-gradient(90deg,#4f7cff,#7aa4ff);
   transition: width .2s ease;
 }
 .percent { margin-top: 10px; font-weight: 700; color: #1a3a6b; font-variant-numeric: tabular-nums; }
-/* 更新横幅 */
+
+/* ---- 更新横幅 ---- */
 .update-banner {
-  position: fixed; left: 50%; bottom: 24px;
+  position: fixed; left: 50%; bottom: 20px;
   transform: translateX(-50%);
   background: #1a3a6b; color: #fff;
   padding: 10px 16px; border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.25);
-  display: none; align-items: center; gap: 12px;
-  z-index: 10000; font-size: 14px;
+  display: none; align-items: center; gap: 10px;
+  z-index: 10000; font-size: 13px; max-width: 92vw;
 }
 .update-banner.show { display: flex; }
 .btn-update {
-  padding: 5px 12px; border: none; border-radius: 5px;
+  padding: 4px 12px; border: none; border-radius: 5px;
   background: #4f7cff; color: #fff; font-weight: 600;
-  cursor: pointer; font-size: 13px;
+  cursor: pointer; font-size: 12px; white-space: nowrap;
 }
 .btn-update:hover { background: #3b67e8; }
 .btn-close {
   background: transparent; color: #cbd5e1; border: none;
-  cursor: pointer; font-size: 18px; line-height: 1; padding: 0 4px;
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0 3px;
 }
 .btn-close:hover { color: #fff; }
+
+/* ---- 设置面板内开关样式 ---- */
+.toggle {
+  position: relative; width: 40px; height: 22px; flex-shrink: 0;
+  background: #d0d5dd; border-radius: 11px; cursor: pointer;
+  transition: background .2s;
+}
+.toggle.on { background: #4f7cff; }
+.toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; background: #fff; border-radius: 50%;
+  transition: transform .2s;
+}
+.toggle.on::after { transform: translateX(18px); }
     --></style>
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        Pikafish 象棋小巫师
-        <small>基于 UCI 协议的强大中国象棋引擎 · 遵守中国象棋竞赛规则</small>
+
+    <!-- 顶栏 -->
+    <div class="header-bar">
+      <h1>Pikafish 象棋小巫师 <span class="subtitle">· 遵守棋规</span></h1>
+      <button class="btn-gear" id="settingsBtn" title="设置">&#9881;</button>
+    </div>
+
+    <!-- 主区域 -->
+    <div class="board-section">
+      <div id="container"></div>
+
+      <!-- 工具栏 -->
+      <div class="board-toolbar">
+        <button class="primary" onclick="restart_click()">重新开始</button>
+        <button onclick="retract_click()">悔棋</button>
+        <button onclick="flipBoard()">翻转棋盘</button>
+        <button onclick="forceRefresh()" id="btnForce">强制刷新</button>
       </div>
-      <div class="game-area">
-        <!-- 棋盘 -->
-        <div class="board-wrapper">
-          <div id="container"></div>
+
+      <!-- 步骤 -->
+      <div class="move-list-wrap">
+        <select id="selMoveList" size="5" onchange="moveList_change()">
+          <option value="0">=== 开始 ===</option>
+        </select>
+      </div>
+
+      <!-- 引擎分析 -->
+      <div class="engine-panel">
+        <div class="eng-version" id="engineVersion"></div>
+        <div class="eng-line" id="infoLine">等待引擎...</div>
+        <span class="eng-pv" id="pvMoves"></span>
+        <div class="eng-status" id="uciStatus">引擎未启动</div>
+      </div>
+    </div>
+
+    <!-- 设置覆盖层 -->
+    <div class="settings-overlay" id="settingsOverlay">
+      <div class="settings-panel">
+        <h2>设置</h2>
+
+        <div class="setting-row">
+          <span class="label">电脑执棋</span>
+          <div class="radio-group">
+            <label><input type="radio" name="computerSide" value="0" onchange="setComputerSide(0)"> 红方</label>
+            <label><input type="radio" name="computerSide" value="1" checked onchange="setComputerSide(1)"> 黑方</label>
+            <label><input type="radio" name="computerSide" value="-1" onchange="setComputerSide(-1)"> 关闭</label>
+          </div>
         </div>
 
-        <!-- 控制面板 -->
-        <div class="controls-wrapper">
-          <div class="label">谁先走</div>
-          <div><select id="selMoveMode" size="3">
-            <option selected value="0">红方（我先走）</option>
-            <option value="1">黑方（电脑先走）</option>
-            <option value="2">双人对弈</option>
-          </select></div>
-          <div class="label">先走让子</div>
-          <div><select id="selHandicap" style="padding:0px">
-            <option selected value="0">不让子</option>
-            <option value="1">让左马</option>
-            <option value="2">让双马</option>
-            <option value="3">让九子</option>
-          </select></div>
-          <div style="padding-top:2px">
-            <input type="button" class="button primary" value="重新开始" onclick="restart_click()">
-          </div>
-          <div style="padding-top:2px">
-            <input type="button" class="button" value="悔棋" onclick="retract_click()">
-          </div>
-          <div style="padding-top:2px">
-            <input type="button" class="button" value="强制刷新" onclick="forceRefresh()" id="btnForce">
-          </div>
-          <div style="height:12px"></div>
-          <div class="label">引擎思考时间</div>
-          <div><select id="selLevel" size="3" onchange="level_change()">
-            <option selected value="0">1 秒（快速）</option>
-            <option value="1">3 秒（业余）</option>
-            <option value="2">5 秒（专业）</option>
-            <option value="3">10 秒（深度）</option>
-          </select></div>
-          <div style="height:6px"></div>
-          <div><input type="checkbox" class="checkbox" id="chkAnimated" checked onclick="board.animated = checked"><label for="chkAnimated">动画</label></div>
-          <div><input type="checkbox" class="checkbox" checked onclick="board.setSound(checked)"><label for="chkSound">音效</label></div>
-          <div style="height:60px"></div>
-          <div class="label">步骤</div>
-          <div><select id="selMoveList" size="10" style="font-family:宋体" onchange="moveList_change()">
-            <option selected value="0">=== 开始 ===</option>
-          </select></div>
+        <div class="setting-row">
+          <span class="label">思考时间</span>
+          <input type="range" id="timeSlider" min="0.5" max="10" step="0.5" value="3" oninput="setThinkTime(this.value)">
+          <span class="time-val" id="timeDisplay">3.0</span>
+          <span class="sec">秒</span>
         </div>
 
-        <!-- 引擎信息面板 -->
-      <div class="info-panel">
-        <div class="panel-title">
-          引擎分析
-          <span class="badge">遵守棋规</span>
+        <div class="setting-row">
+          <span class="label">音效</span>
+          <span class="toggle on" id="soundToggle" onclick="toggleSound()"></span>
         </div>
-        <div class="engine-info" id="engineInfo">
-          <div class="info-line" id="infoLine">等待引擎...</div>
-          <div class="pv-box" id="pvBox">
-            <span class="pv-label">PV</span>
-            <span class="pv-moves" id="pvMoves"></span>
-          </div>
+
+        <div class="setting-row">
+          <span class="label">动画</span>
+          <span class="toggle on" id="animToggle" onclick="toggleAnim()"></span>
         </div>
-        <div class="uci-status" id="uciStatus">引擎未启动</div>
-        <div id="uciOutput" style="display:none;"></div>
-      </div>
+
+        <div class="settings-close-row">
+          <button id="settingsClose">关闭</button>
+        </div>
       </div>
     </div>
 
@@ -277,32 +291,22 @@ label { font-size: 14px; }
       </div>
     </div>
 
-    <!-- Service Worker 更新横幅 -->
+    <!-- 更新横幅 -->
     <div class="update-banner" id="updateBanner">
       <span id="updateText">检测到引擎更新，刷新后使用最新版本。</span>
-      <button id="btnUpdate" class="btn-update">立即刷新</button>
+      <button class="btn-update" id="btnUpdate">立即刷新</button>
       <button class="btn-close" id="btnUpdateDismiss">&times;</button>
     </div>
-
-    <!-- 强制刷新按钮（控制面板区域） -->
 
     <script type="text/javascript"><!--
 "use strict";
 
-/* ---------- 全局错误捕获 ---------- */
+/* ---------- 全局错误 ---------- */
 window.onerror = function(msg, url, line, col, err) {
-  var errText = '[全局错误] ' + msg + ' (行:' + line + ')';
-  if (typeof appendUci === 'function') {
-    try { appendUci(errText, 'err'); } catch(e) {}
-  }
   console.error('PikafishUI 全局错误:', msg, url, line, col, err);
   return true;
 };
 window.addEventListener('unhandledrejection', function(ev) {
-  var errText = '[未处理Promise拒绝] ' + (ev.reason ? (ev.reason.message || ev.reason) : 'unknown');
-  if (typeof appendUci === 'function') {
-    try { appendUci(errText, 'err'); } catch(e) {}
-  }
   console.error('PikafishUI Promise拒绝:', ev.reason);
 });
 
@@ -312,12 +316,9 @@ var STARTUP_FEN = [
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/R1BAKAB1R w",
   "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/9/1C5C1/9/RN2K2NR w",
 ];
-
 var LIMIT_DEPTH = 64;
-
-/* ---------- UCI 输出 ---------- */
-var uciOutputEl = document.getElementById('uciOutput');
 var uciStatusEl = document.getElementById('uciStatus');
+var engineVersion = '';
 
 /* ---------- UCI → 中文棋谱 ---------- */
 var CN_PIECE_R = { K:'帅', A:'仕', B:'相', N:'马', R:'车', C:'炮', P:'兵' };
@@ -342,37 +343,25 @@ function uciToChinese(uci, pos) {
   var dstFile = isRed ? (9 - df) : (df + 1);
   var steps = Math.abs(dr - sr);
   var dir;
-  if (isRed) {
-    dir = (dr > sr) ? '进' : (dr < sr) ? '退' : '平';
-  } else {
-    dir = (dr < sr) ? '进' : (dr > sr) ? '退' : '平';
-  }
+  if (isRed) { dir = (dr > sr) ? '进' : (dr < sr) ? '退' : '平'; }
+  else { dir = (dr < sr) ? '进' : (dr > sr) ? '退' : '平'; }
   var target;
-  if (dir === '平') {
-    target = nums[dstFile - 1];
-  } else if (pt === 3 || pt === 1 || pt === 2) {
-    // 马、仕(士)、相(象)：目标列
-    target = nums[dstFile - 1];
-  } else {
-    target = nums[Math.min(steps - 1, 8)];
-  }
+  if (dir === '平') { target = nums[dstFile - 1]; }
+  else if (pt === 3 || pt === 1 || pt === 2) { target = nums[dstFile - 1]; }
+  else { target = nums[Math.min(steps - 1, 8)]; }
   return pName + nums[srcFile - 1] + dir + target;
 }
 
 function pvToChinese(pvMoves, pos) {
   if (!pvMoves || pvMoves.length === 0) return '';
-  // 遍历 PV，应用每步棋并转为中文
-  var result = [];
-  var p = pos;
+  var result = [], p = pos;
   for (var i = 0; i < pvMoves.length; i++) {
     var cn = uciToChinese(pvMoves[i], p);
     if (cn.length < 4) cn = pvMoves[i];
     result.push(cn);
-    // 应用此步到棋盘，用于后续着法的上下文
     var xqw = uciToXqwMove(pvMoves[i]);
     if (xqw > 0) p.makeMove(xqw);
   }
-  // 撤销所有着法
   for (var i = pvMoves.length - 1; i >= 0; i--) {
     var xqw = uciToXqwMove(pvMoves[i]);
     if (xqw > 0) p.undoMakeMove();
@@ -380,7 +369,7 @@ function pvToChinese(pvMoves, pos) {
   return result.join('　');
 }
 
-/* ---------- 显示引擎信息 ---------- */
+/* ---------- 引擎信息显示 ---------- */
 function showEngineInfo(info) {
   var infoLineEl = document.getElementById('infoLine');
   var pvMovesEl = document.getElementById('pvMoves');
@@ -389,19 +378,14 @@ function showEngineInfo(info) {
     pvMovesEl.textContent = '';
     return;
   }
-  infoLineEl.innerHTML = 'depth=<span class="highlight-score">' + info.depth +
-    '</span>　score=<span class="highlight-score">' + info.score +
-    '</span>　nodes=' + info.nodes;
+  infoLineEl.innerHTML = 'depth=<span class="hl">' + info.depth +
+    '</span>  score=<span class="hl">' + info.score +
+    '</span>  nodes=' + info.nodes;
   if (info.pv && info.pv.length > 0) {
-    var cnPv = pvToChinese(info.pv, board.pos);
-    pvMovesEl.textContent = cnPv;
+    pvMovesEl.textContent = pvToChinese(info.pv, board.pos);
   } else {
     pvMovesEl.textContent = '';
   }
-}
-
-function appendUci(text, cls) {
-  // UCI 面板已隐藏，保留空函数以防调用
 }
 
 function setLoadProgress(percent, text) {
@@ -410,137 +394,138 @@ function setLoadProgress(percent, text) {
     document.getElementById('loadBar').style.width = Math.min(100, Math.floor(p)) + '%';
     document.getElementById('loadPct').textContent = Math.min(100, Math.floor(p)) + '%';
   }
-  if (text) {
-    document.getElementById('loadMsg').textContent = text;
-  }
+  if (text) document.getElementById('loadMsg').textContent = text;
 }
 
-/* ---------- 棋盘初始化 ---------- */
+/* ---------- 棋盘 ---------- */
 var board = new Board(container, "images/", "sounds/");
-board.setSearch(0);  // 不使用内置搜索，用 Pikafish 代替
-board.millis = 1000;
+board.setSearch(0);
+board.millis = 3000;
 board.computer = 1;
+board.displayFlipped = false; // 显示翻转（不影响 AI 走棋方）
 
-// 覆盖 response 方法 — 使用 Pikafish UCI 引擎（异步，带动画）
-  Board.prototype.response = function() {
-    if (this.search == null || !this.computerMove()) {
-      this.busy = false;
-      return;
-    }
-    this.thinking.style.visibility = "visible";
-    this.busy = true;
-    var this_ = this;
-    uciStatusEl.textContent = '引擎思考中...';
+// 覆盖 flipped 方法：支持 display-only 翻转
+board.flipped = function(sq) {
+  var flip = this.computer == 0; // 原始逻辑
+  if (board.displayFlipped) flip = !flip;
+  return flip ? SQUARE_FLIP(sq) : sq;
+};
 
-    var finishSearch = function(mv) {
-      try {
-        if (mv <= 0) {
-          this_.busy = false;
-          this_.flushBoard();
-          return;
-        }
-        if (!this_.pos.legalMove(mv)) {
-          this_.busy = false;
-          this_.flushBoard();
-          return;
-        }
-        // 显示引擎分析信息
-        if (pikafishSearch && pikafishSearch.lastInfo) {
-          showEngineInfo(pikafishSearch.lastInfo);
-        }
-        // AI 走棋 — 启用动画（让 addMove 自然走动画流程）
-        this_.addMove(mv, true);
-        // addMove 在动画模式下立即返回，postAddMove 在动画完成后调用
-        // postAddMove → response() 会在动画完成后自动重置 busy
-      } catch (e) {
-        this_.busy = false;
-        this_.flushBoard();
-      }
-      this_.thinking.style.visibility = "hidden";
-      uciStatusEl.textContent = '引擎就绪';
-    };
+Board.prototype.response = function() {
+  if (this.search == null || !this.computerMove()) { this.busy = false; return; }
+  this.thinking.style.visibility = "visible";
+  this.busy = true;
+  var this_ = this;
+  uciStatusEl.textContent = '引擎思考中...';
 
-    setTimeout(function() {
-      if (this_.search && typeof this_.search.searchMain === 'function') {
-        this_.search.searchMain(LIMIT_DEPTH, this_.millis, finishSearch);
-      } else {
-        this_.busy = false;
-        this_.thinking.style.visibility = "hidden";
-        uciStatusEl.textContent = '引擎未就绪';
-      }
-    }, 50);
+  var finishSearch = function(mv) {
+    try {
+      if (mv <= 0) { this_.busy = false; this_.flushBoard(); return; }
+      if (!this_.pos.legalMove(mv)) { this_.busy = false; this_.flushBoard(); return; }
+      if (pikafishSearch && pikafishSearch.lastInfo) showEngineInfo(pikafishSearch.lastInfo);
+      this_.addMove(mv, true);
+    } catch (e) { this_.busy = false; this_.flushBoard(); }
+    this_.thinking.style.visibility = "hidden";
+    uciStatusEl.textContent = '引擎就绪';
   };
 
-// 覆盖 onAddMove — 更新走法列表
+  setTimeout(function() {
+    if (this_.search && typeof this_.search.searchMain === 'function') {
+      this_.search.searchMain(LIMIT_DEPTH, this_.millis, finishSearch);
+    } else { this_.busy = false; this_.thinking.style.visibility = "hidden"; uciStatusEl.textContent = '引擎未就绪'; }
+  }, 50);
+};
+
 board.onAddMove = function() {
   var counter = (board.pos.mvList.length >> 1);
   var space = (counter > 99 ? "    " : "   ");
   counter = (counter > 9 ? "" : " ") + counter + ".";
   var text = (board.pos.sdPlayer == 0 ? space : counter) + move2Iccs(board.mvLast);
   var value = "" + board.mvLast;
-  try {
-    selMoveList.add(createOption(text, value, false));
-  } catch (e) {
-    selMoveList.add(createOption(text, value, true));
-  }
+  try { selMoveList.add(createOption(text, value, false)); }
+  catch (e) { selMoveList.add(createOption(text, value, true)); }
   selMoveList.scrollTop = selMoveList.scrollHeight;
 };
 
 function createOption(text, value, ie8) {
   var opt = document.createElement("option");
-  opt.selected = true;
-  opt.value = value;
-  if (ie8) {
-    opt.text = text;
-  } else {
-    opt.innerHTML = text.replace(/ /g, "&nbsp;");
-  }
+  opt.selected = true; opt.value = value;
+  if (ie8) opt.text = text;
+  else opt.innerHTML = text.replace(/ /g, "&nbsp;");
   return opt;
 }
 
-/* ---------- 控制函数 ---------- */
-function level_change() {
-  var levels = [1000, 3000, 5000, 10000];
-  board.millis = levels[selLevel.selectedIndex] || 1000;
-}
-
+/* ---------- 控制 ---------- */
 function restart_click() {
   selMoveList.options.length = 1;
   selMoveList.selectedIndex = 0;
-  board.computer = 1 - selMoveMode.selectedIndex;
-  board.restart(STARTUP_FEN[selHandicap.selectedIndex]);
+  board.computer = 1 - (parseInt(document.querySelector('input[name="computerSide"]:checked').value) || 0);
+  board.restart(STARTUP_FEN[0]);
   uciStatusEl.textContent = '引擎就绪';
+  document.getElementById('engineVersion').textContent = engineVersion;
 }
 
 function retract_click() {
-  for (var i = board.pos.mvList.length; i < selMoveList.options.length; i ++) {
-    board.pos.makeMove(parseInt(selMoveList.options[i].value));
-  }
+  for (var i = board.pos.mvList.length; i < selMoveList.options.length; i++) board.pos.makeMove(parseInt(selMoveList.options[i].value));
   board.retract();
   selMoveList.options.length = board.pos.mvList.length;
   selMoveList.selectedIndex = selMoveList.options.length - 1;
 }
 
 function moveList_change() {
-  if (board.result == RESULT_UNKNOWN) {
-    selMoveList.selectedIndex = selMoveList.options.length - 1;
-    return;
-  }
-  var from = board.pos.mvList.length;
-  var to = selMoveList.selectedIndex;
-  if (from == to + 1) {
-    return;
-  }
-  if (from > to + 1) {
-    for (var i = to + 1; i < from; i ++) {
-      board.pos.undoMakeMove();
-    }
-  } else {
-    for (var i = from; i <= to; i ++) {
-      board.pos.makeMove(parseInt(selMoveList.options[i].value));
-    }
-  }
+  if (board.result == RESULT_UNKNOWN) { selMoveList.selectedIndex = selMoveList.options.length - 1; return; }
+  var from = board.pos.mvList.length, to = selMoveList.selectedIndex;
+  if (from == to + 1) return;
+  if (from > to + 1) { for (var i = to + 1; i < from; i++) board.pos.undoMakeMove(); }
+  else { for (var i = from; i <= to; i++) board.pos.makeMove(parseInt(selMoveList.options[i].value)); }
   board.flushBoard();
+}
+
+/* ---------- 翻转棋盘（仅显示翻转，不影响 AI 走棋方） ---------- */
+function flipBoard() {
+  board.displayFlipped = !board.displayFlipped;
+  board.flushBoard();
+}
+
+/* ---------- 设置面板 ---------- */
+var settingsOverlay = document.getElementById('settingsOverlay');
+
+document.getElementById('settingsBtn').addEventListener('click', function() {
+  settingsOverlay.classList.add('open');
+});
+document.getElementById('settingsClose').addEventListener('click', function() {
+  settingsOverlay.classList.remove('open');
+});
+settingsOverlay.addEventListener('click', function(e) {
+  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+});
+
+function setComputerSide(val) {
+  board.computer = parseInt(val);
+  if (board.computer >= 0) {
+    selMoveList.options.length = 1;
+    board.restart(STARTUP_FEN[0]);
+    if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
+  }
+}
+
+function setThinkTime(val) {
+  var ms = Math.round(parseFloat(val) * 1000);
+  board.millis = ms;
+  document.getElementById('timeDisplay').textContent = parseFloat(val).toFixed(1);
+}
+
+function toggleSound() {
+  var t = document.getElementById('soundToggle');
+  board.setSound(!board.sound);
+  t.classList.toggle('on');
+}
+
+function toggleAnim() {
+  var t = document.getElementById('animToggle');
+  board.animated = !board.animated;
+  document.getElementById('chkAnimated').checked = board.animated;
+  t.classList.toggle('on');
 }
 
 /* ---------- 引擎初始化 ---------- */
@@ -550,17 +535,14 @@ function initEngine() {
   var overlayEl = document.getElementById('overlay');
   overlayEl.classList.remove('hidden');
   setLoadProgress(0, '正在下载引擎二进制...');
-
   var base = getAssetBaseXqw();
 
-  // 下载 WASM
   fetch(base + 'wasm/pikafish.wasm').then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
     var total = parseInt(resp.headers.get('content-length') || '0', 10);
     if (!resp.body) return resp.arrayBuffer();
     var reader = resp.body.getReader();
-    var chunks = [];
-    var received = 0;
+    var chunks = [], received = 0;
     function readChunk() {
       return reader.read().then(function(result) {
         if (result.done) {
@@ -569,8 +551,7 @@ function initEngine() {
           for (var i = 0; i < chunks.length; i++) { buf.set(chunks[i], off); off += chunks[i].length; }
           return buf.buffer;
         }
-        chunks.push(result.value);
-        received += result.value.length;
+        chunks.push(result.value); received += result.value.length;
         var pct = total > 0 ? (received / total) * 100 : NaN;
         setLoadProgress(pct, '下载引擎 ' + (received/1024/1024).toFixed(2) + ' MB');
         return readChunk();
@@ -581,42 +562,29 @@ function initEngine() {
     setLoadProgress(95, '正在下载引擎脚本...');
     return fetch(base + 'wasm/pikafish.js').then(function(resp) {
       if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
-      return resp.text().then(function(jsText) {
-        return { wasmBinary: wasmBinary, engineJs: jsText };
-      });
+      return resp.text().then(function(jsText) { return { wasmBinary: wasmBinary, engineJs: jsText }; });
     });
   }).then(function(assets) {
     setLoadProgress(99, '正在启动引擎...');
-
-    // 创建 PikafishUciSearch
     pikafishSearch = new PikafishUciSearch(board.pos, 16);
     pikafishSearch.onUciStdout = function(text) {
-      // 引擎输出 — 仅内部使用（已不显示到 UI）
+      // 捕获引擎版本
+      if (text.indexOf('id name ') === 0) {
+        engineVersion = text.substring(8);
+        document.getElementById('engineVersion').textContent = engineVersion;
+      }
     };
-    pikafishSearch.onUciStderr = function(text) {
-      console.warn('[pikafish] ' + text);
-    };
-    pikafishSearch.onUciDebug = function(text) {
-      // 调试信息
-    };
-    // 实时引擎分析更新
-    pikafishSearch.onInfo = function(info) {
-      showEngineInfo(info);
-    };
-
+    pikafishSearch.onUciStderr = function(text) { console.warn('[pikafish] ' + text); };
+    pikafishSearch.onUciDebug = function(text) {};
+    pikafishSearch.onInfo = function(info) { showEngineInfo(info); };
     pikafishSearch.wasmBinary = assets.wasmBinary;
     pikafishSearch.engineJs = assets.engineJs;
-
-    // 测试引擎通信
     return pikafishSearch.startEngine();
   }).then(function() {
     board.search = pikafishSearch;
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎就绪';
-
-    if (board.computerMove()) {
-      setTimeout(function() { board.response(); }, 300);
-    }
+    if (board.computerMove()) setTimeout(function() { board.response(); }, 300);
   }).catch(function(err) {
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎加载失败';
@@ -625,86 +593,48 @@ function initEngine() {
 
 /* ---------- 页面加载 ---------- */
 window.addEventListener('load', function() {
-  // 设置初始棋盘
-  board.computer = 1 - selMoveMode.selectedIndex;
+  board.computer = 1;
   board.restart(STARTUP_FEN[0]);
-
-  // 初始化引擎
   initEngine();
-
-  // 注册 Service Worker — 离线缓存 + 引擎更新通知
   setupServiceWorker();
+  // 同步设置面板初始状态
+  document.getElementById('timeDisplay').textContent = '3.0';
 });
 
-/* ---------- Service Worker 管理 ---------- */
+/* ---------- Service Worker ---------- */
 function setupServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-
   var updateBanner = document.getElementById('updateBanner');
   var updateTextEl = document.getElementById('updateText');
   var btnUpdate = document.getElementById('btnUpdate');
   var btnUpdateDismiss = document.getElementById('btnUpdateDismiss');
   var updateDismissed = false;
 
-  function showBanner(msg) {
-    if (updateDismissed) return;
-    if (msg) updateTextEl.textContent = msg;
-    updateBanner.classList.add('show');
-  }
+  function showBanner(msg) { if (updateDismissed) return; if (msg) updateTextEl.textContent = msg; updateBanner.classList.add('show'); }
   function hideBanner() { updateBanner.classList.remove('show'); }
 
   btnUpdate.addEventListener('click', function() { location.reload(); });
-  btnUpdateDismiss.addEventListener('click', function() {
-    updateDismissed = true;
-    hideBanner();
-  });
-
-  // 接收 SW 推送的消息
+  btnUpdateDismiss.addEventListener('click', function() { updateDismissed = true; hideBanner(); });
   navigator.serviceWorker.addEventListener('message', function(ev) {
     var data = ev.data || {};
-    if (data.type === 'ENGINE_UPDATED') {
-      showBanner('引擎文件已更新（' + data.url.split('/').pop() + '），刷新后立即生效。');
-    } else if (data.type === 'CACHE_UPDATED') {
-      showBanner('检测到资源更新（' + data.url.split('/').pop() + '），刷新后可获取新版本。');
-    } else if (data.type === 'CACHE_CLEARED') {
-      location.reload();
-    }
+    if (data.type === 'ENGINE_UPDATED' || data.type === 'CACHE_UPDATED') showBanner('引擎已更新，刷新后使用最新版本。');
+    else if (data.type === 'CACHE_CLEARED') location.reload();
   });
-
   navigator.serviceWorker.register('sw.js').then(function(reg) {
-    console.log('[SW] 已注册, scope=', reg.scope);
-
-    // 如果已有等待中的 SW（新版本已下载）
-    if (reg.waiting) {
-      showBanner('检测到新版本引擎，刷新后使用最新版本。');
-    }
-
-    // 检测新 SW 安装
+    if (reg.waiting) showBanner('检测到新版本引擎，刷新后使用最新版本。');
     reg.addEventListener('updatefound', function() {
-      var newWorker = reg.installing;
-      newWorker.addEventListener('statechange', function() {
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          showBanner('检测到新版本引擎，刷新后使用最新版本。');
-        }
+      reg.installing.addEventListener('statechange', function() {
+        if (this.state === 'installed' && navigator.serviceWorker.controller) showBanner('检测到新版本引擎，刷新后使用最新版本。');
       });
     });
-
-    // 周期性检查更新（每 10 分钟）
     setInterval(function() { reg.update().catch(function() {}); }, 10 * 60 * 1000);
-  }).catch(function(err) {
-    console.warn('[SW] 注册失败:', err);
-  });
+  }).catch(function(err) { console.warn('[SW] 注册失败:', err); });
 }
 
-/* 强制刷新：清空缓存 + 重新加载 */
 function forceRefresh() {
-  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
-    location.reload();
-    return;
-  }
-  var btn = document.getElementById('btnForce');
-  btn.disabled = true;
-  btn.value = '清理中…';
+  if (!navigator.serviceWorker || !navigator.serviceWorker.controller) { location.reload(); return; }
+  document.getElementById('btnForce').disabled = true;
+  document.getElementById('btnForce').textContent = '清理中…';
   navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
 }
 
