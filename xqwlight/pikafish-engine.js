@@ -120,7 +120,7 @@ PikafishUciSearch.prototype.init = function(wasmBinary, engineJs) {
 };
 
 /* 引擎版本：与 sw.js / xqwlight/sw.js 保持一致 */
-var ENGINE_VERSION = "20260619-234833";
+var ENGINE_VERSION = "20260620-235208";
 var ENGINE_QUERY = "?v=" + ENGINE_VERSION;
 
 PikafishUciSearch.prototype._downloadEngine = function() {
