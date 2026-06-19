@@ -599,6 +599,7 @@ document.getElementById('settingsOk').addEventListener('click', function() {
   board.millis = _pending.millis;
   board.setSound(_pending.sound);
   board.animated = _pending.animated;
+  board.displayFlipped = false;  // 重置翻转，确保棋盘方向与新的 compRed/compBlack 一致
 
   settingsOverlay.classList.remove('open');
   _settingsOpen = false;
