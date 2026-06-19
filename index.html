@@ -254,7 +254,7 @@ function getAssetBase() {
 async function downloadWasmWithProgress() {
   const url = getAssetBase() + 'wasm/pikafish.wasm' + ENGINE_QUERY;
   appendLine('[调试] 下载 WASM: ' + url, 'dbg');
-  const resp = await fetch(url);
+  const resp = await fetch(url, { cache: "no-store" });
   if (!resp.ok) throw new Error('下载失败：HTTP ' + resp.status);
   const totalBytes = parseInt(resp.headers.get('content-length') || '0', 10);
   if (!resp.body) {
@@ -288,7 +288,7 @@ async function downloadWasmWithProgress() {
 async function downloadEngineJs() {
   const url = getAssetBase() + 'wasm/pikafish.js' + ENGINE_QUERY;
   appendLine('[调试] 下载引擎 JS: ' + url, 'dbg');
-  const resp = await fetch(url);
+  const resp = await fetch(url, { cache: "no-store" });
   if (!resp.ok) throw new Error('加载 pikafish.js 失败：HTTP ' + resp.status);
   const txt = await resp.text();
   appendLine('[调试] JS 文本 ' + (txt.length/1024).toFixed(1) + ' KB', 'dbg');

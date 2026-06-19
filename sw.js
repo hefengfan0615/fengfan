@@ -1,59 +1,34 @@
 /* ====================================================================
  * Pikafish WASM — Service Worker
- *   - 离线支持：首次访问把所有静态资源预缓存到 Cache Storage
- *   - 引擎文件（WASM/JS）→ Network First + cache:"reload"，
- *     强绕开 HTTP 缓存，确保引擎更新后用户立即获取新版
- *   - 其他资源 → stale-while-revalidate
- *   - 资源 URL 带 ?v=ENGINE_VERSION 防止任何代理/CDN 缓存命中旧版
+ *   引擎文件（WASM/JS）不缓存，每次访问都重新下载，确保永远最新。
+ *   其他资源仍然预缓存，保证离线可用。
+ *   每次安装新 SW 都会清理旧缓存。
  * ==================================================================== */
 
 "use strict";
 
-/* 引擎版本号：每次重新编译 WASM/JS 后必须同步更新 */
-const ENGINE_VERSION = "20260619";
-const CACHE_NAME = "pikafish-cache-" + ENGINE_VERSION;
+/* 每次更新此版本号即可强制浏览器安装新 SW，清理旧缓存 */
+const SW_VERSION = "20260619";
+const CACHE_NAME = "pikafish-cache-" + SW_VERSION;
 
-/* 引擎文件路径（pathname 是绝对路径，不带 "./" 前缀） */
-const ENGINE_FILES = [
-  "/wasm/pikafish.js",
-  "/wasm/pikafish.wasm"
-];
-
-/* 需要预缓存的静态资源（引擎文件带 ?v= 强绕 HTTP/代理 缓存） */
+/* 需要预缓存的静态资源（引擎文件不在这里） */
 const ASSETS = [
   "./",
   "./index.html",
-  "./worker.js",
-  "./wasm/pikafish.js?v=" + ENGINE_VERSION,
-  "./wasm/pikafish.wasm?v=" + ENGINE_VERSION
+  "./worker.js"
 ];
 
 /* 判断是否为引擎文件 */
 function isEngineFile(urlPath) {
-  for (var i = 0; i < ENGINE_FILES.length; i++) {
-    if (urlPath.indexOf(ENGINE_FILES[i]) >= 0) return true;
-  }
-  return false;
+  return urlPath.indexOf("/wasm/pikafish.js") >= 0 ||
+         urlPath.indexOf("/wasm/pikafish.wasm") >= 0;
 }
 
-/* ---------- 安装：预缓存 + 跳过等待 ----------
- * 关键点：用 fetch(url, { cache: "reload" }) 替代 cache.addAll，
- * 强制绕开浏览器 HTTP 缓存（连 304 协商都不会发生），保证 precache 永远是最新版本。
- */
+/* ---------- 安装：预缓存非引擎资源 + 跳过等待 ---------- */
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(function (cache) {
-        return Promise.all(ASSETS.map(function (url) {
-          return fetch(url, { cache: "reload" })
-            .then(function (resp) {
-              if (resp && resp.ok) {
-                return cache.put(url, resp);
-              }
-            })
-            .catch(function () { /* 单个资源失败不阻塞整体 */ });
-        }));
-      })
+      .then(function (cache) { return cache.addAll(ASSETS); })
       .then(function () { return self.skipWaiting(); })
   );
 });
@@ -74,7 +49,7 @@ self.addEventListener("activate", function (event) {
 });
 
 /* ---------- 抓取 ----------
- * 引擎文件 → Network First + cache:"reload"（强绕 HTTP 缓存）
+ * 引擎文件 → 不缓存，直接 fetch，不带缓存
  * 其他资源 → Cache First + stale-while-revalidate
  */
 self.addEventListener("fetch", function (event) {
@@ -82,23 +57,12 @@ self.addEventListener("fetch", function (event) {
   if (req.method !== "GET") return;
 
   var url = new URL(req.url);
-  /* 只处理同源请求；跨源资源（如 CDN）由浏览器自行处理 */
   if (url.origin !== self.location.origin) return;
 
   if (isEngineFile(url.pathname)) {
-    /* ---- 引擎文件：Network First + cache:"reload" ---- */
+    /* ---- 引擎文件：不缓存，每次重新下载 ---- */
     event.respondWith(
-      caches.open(CACHE_NAME).then(function (cache) {
-        return fetch(req, { cache: "reload" }).then(function (resp) {
-          if (resp && resp.ok) {
-            cache.put(req, resp.clone());
-            return resp;
-          }
-          return cache.match(req);
-        }).catch(function () {
-          return cache.match(req);
-        });
-      })
+      fetch(req, { cache: "no-store" })
     );
   } else {
     /* ---- 其他资源：Cache First + stale-while-revalidate ---- */

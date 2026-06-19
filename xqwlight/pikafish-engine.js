@@ -121,12 +121,12 @@ PikafishUciSearch.prototype._downloadEngine = function() {
   var self = this;
   var base = getAssetBaseXqw();
 
-  return fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY).then(function(resp) {
+  return fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY, { cache: "no-store" }).then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
     return resp.arrayBuffer();
   }).then(function(ab) {
     self.wasmBinary = ab;
-    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY);
+    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY, { cache: "no-store" });
   }).then(function(resp) {
     if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
     return resp.text();

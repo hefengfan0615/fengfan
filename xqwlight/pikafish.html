@@ -637,7 +637,7 @@ function initEngine() {
   setLoadProgress(0, '正在下载引擎二进制...');
   var base = getAssetBaseXqw();
 
-  fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY).then(function(resp) {
+  fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY, { cache: "no-store" }).then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
     var total = parseInt(resp.headers.get('content-length') || '0', 10);
     if (!resp.body) return resp.arrayBuffer();
@@ -660,7 +660,7 @@ function initEngine() {
     return readChunk();
   }).then(function(wasmBinary) {
     setLoadProgress(95, '正在下载引擎脚本...');
-    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY).then(function(resp) {
+    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY, { cache: "no-store" }).then(function(resp) {
       if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
       return resp.text().then(function(jsText) { return { wasmBinary: wasmBinary, engineJs: jsText }; });
     });
