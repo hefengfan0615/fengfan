@@ -2,6 +2,9 @@
   "buildCommand": null,
   "outputDirectory": "xqwlight",
   "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/pikafish.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)\\.wasm",
