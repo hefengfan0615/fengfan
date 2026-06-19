@@ -99,7 +99,13 @@ function PikafishUciSearch(pos, hashLevel) {
   this.uciReminders = getRuleReminders();
   this.lastInfo = null;      // 存储最后一次 info depth score nodes pv
   this.onInfo = null;        // info 更新回调（实时）
+  this.startFen = null;      // 开局 FEN，用于构建含完整历史着法的 UCI position 命令
 }
+
+/* 设置开局 FEN */
+PikafishUciSearch.prototype.setStartFen = function(fen) {
+  this.startFen = fen;
+};
 
 /* 初始化：下载引擎 WASM/JS（如果未缓存）或接受已有缓存 */
 PikafishUciSearch.prototype.init = function(wasmBinary, engineJs) {
@@ -212,18 +218,26 @@ PikafishUciSearch.prototype.startEngine = function() {
 };
 
 /* 执行 UCI 搜索，返回 bestmove 对应的 xqwlight move */
-PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs) {
+PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, hasStartFen) {
   var self = this;
   return new Promise(function(resolve, reject) {
     // 构建 UCI 命令
     var commands = [];
 
-    // FEN 已完整描述局面，不需要附加 moves（否则引擎会从 FEN 局面重复走这些着法）
-    commands.push("position fen " + fen);
+    // 必须有开局 FEN 才能附加 moves 历史（否则 moves 会从当前局面重复走棋）
+    // 附带 moves 历史让引擎能检测与历史局面的重复（长将/长捉违规）
+    var posCmd = "position fen " + fen;
+    if (hasStartFen && movesList && movesList.length > 0) {
+      posCmd += " moves " + movesList.join(" ");
+    }
+    commands.push(posCmd);
     commands.push("go movetime " + movetimeMs);
 
     // 显示 FEN 供调试
-    if (self.onUciStdout) self.onUciStdout('[调试] fen=' + fen);
+    if (self.onUciStdout) {
+      var debugMoves = (hasStartFen && movesList && movesList.length > 0) ? movesList.join(',') : '无';
+      self.onUciStdout('[调试] fen=' + fen + '  moves=' + debugMoves + '  hasStartFen=' + hasStartFen);
+    }
 
     // 发送 UCI 命令提醒
     var reminders = self.uciReminders;
@@ -380,56 +394,54 @@ PikafishUciSearch.prototype._parseBestmove = function(bestmoveLine) {
   return "";
 };
 
-/* 获取当前局面 FEN 字符串（含 moves 历史） */
+/* 获取开局 FEN 和全部历史着法（用于 UCI position 命令的完整历史重放） */
 PikafishUciSearch.prototype._getFenWithMoves = function() {
-  // 从 pos 对象重建 FEN
-  // xqwlight 的 pos 有 squares, sdPlayer 等信息
   var pos = this.pos;
 
-  // 重建 FEN 字符串 (board 部分)
-  var fen = "";
-  for (var y = 3; y <= 12; y++) {
-    var emptyCount = 0;
-    for (var x = 3; x <= 11; x++) {
-      var sq = x + (y << 4);
-      var pc = pos.squares[sq];
-      if (pc === 0) {
-        emptyCount++;
-      } else {
-        if (emptyCount > 0) {
-          fen += emptyCount;
-          emptyCount = 0;
-        }
-        var pieceChar = "";
-        var pieceType = pc & 7;
-        var side = pc >> 3;
-        switch (pieceType) {
-          case 0: pieceChar = "K"; break;
-          case 1: pieceChar = "A"; break;
-          case 2: pieceChar = "B"; break;
-          case 3: pieceChar = "N"; break;
-          case 4: pieceChar = "R"; break;
-          case 5: pieceChar = "C"; break;
-          case 6: pieceChar = "P"; break;
-        }
-        if (pieceChar) {
-          // side=1 → pc 8-14 → RED (uppercase) ; side=2 → pc 16-22 → BLACK (lowercase)
-          fen += (side === 1 ? pieceChar : pieceChar.toLowerCase());
+  // 使用开局 FEN（如果未设置则回退到当前局面 FEN）
+  var fen = this.startFen;
+  if (!fen) {
+    // 从当前局面构建 FEN
+    fen = "";
+    for (var y = 3; y <= 12; y++) {
+      var emptyCount = 0;
+      for (var x = 3; x <= 11; x++) {
+        var sq = x + (y << 4);
+        var pc = pos.squares[sq];
+        if (pc === 0) {
+          emptyCount++;
+        } else {
+          if (emptyCount > 0) {
+            fen += emptyCount;
+            emptyCount = 0;
+          }
+          var pieceChar = "";
+          var pieceType = pc & 7;
+          var side = pc >> 3;
+          switch (pieceType) {
+            case 0: pieceChar = "K"; break;
+            case 1: pieceChar = "A"; break;
+            case 2: pieceChar = "B"; break;
+            case 3: pieceChar = "N"; break;
+            case 4: pieceChar = "R"; break;
+            case 5: pieceChar = "C"; break;
+            case 6: pieceChar = "P"; break;
+          }
+          if (pieceChar) {
+            fen += (side === 1 ? pieceChar : pieceChar.toLowerCase());
+          }
         }
       }
+      if (emptyCount > 0) fen += emptyCount;
+      if (y < 12) fen += "/";
     }
-    if (emptyCount > 0) fen += emptyCount;
-    if (y < 12) fen += "/";
+    fen += " " + (pos.sdPlayer === 0 ? "w" : "b");
   }
 
-  fen += " " + (pos.sdPlayer === 0 ? "w" : "b");
-
   // 构建 moves 列表（从初始位置到当前走法）
-  // xqwlight 的 mvList 包含所有走过的着法
   var moves = [];
   var mvList = pos.mvList;
   if (mvList && mvList.length > 1) {
-    // mvList[0] 总是 0（初始标记），实际着法从索引 1 开始
     for (var i = 1; i < mvList.length; i++) {
       var mv = mvList[i];
       if (mv > 0) {
@@ -438,7 +450,7 @@ PikafishUciSearch.prototype._getFenWithMoves = function() {
     }
   }
 
-  return { fen: fen, moves: moves };
+  return { fen: fen, moves: moves, hasStartFen: !!this.startFen };
 };
 
 /* ---------- searchMain(depth, millis) ----------
@@ -455,7 +467,7 @@ PikafishUciSearch.prototype.searchMain = function(depth, millis, callback) {
   var posData = self._getFenWithMoves();
 
   // 执行 UCI 搜索
-  self.searchUci(posData.fen, posData.moves, millis).then(function(xqwMove) {
+  self.searchUci(posData.fen, posData.moves, millis, posData.hasStartFen).then(function(xqwMove) {
     if (callback) {
       callback(xqwMove);
     }

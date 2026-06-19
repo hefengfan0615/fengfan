@@ -419,6 +419,11 @@ Board.prototype.restart = function(fen) {
   }
   this.result = RESULT_UNKNOWN;
   this.pos.fromFen(fen);
+  // 保存开局 FEN 到 Board 对象和引擎搜索对象
+  this.startFen = fen;
+  if (this.search && typeof this.search.setStartFen === 'function') {
+    this.search.setStartFen(fen);
+  }
   this.flushBoard();
   this.playSound("newgame");
   this.response();

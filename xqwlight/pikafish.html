@@ -477,6 +477,36 @@ Board.prototype.response = function() {
       if (_settingsOpen) { this_.busy = false; this_.flushBoard(); return; }
       if (mv <= 0) { this_.busy = false; this_.flushBoard(); return; }
       if (!this_.pos.legalMove(mv)) { this_.busy = false; this_.flushBoard(); return; }
+
+      // 棋规安全校验：提前检测长将/长捉等违规着法
+      // 模拟走棋并检测是否构成重复局面违规
+      if (this_.pos.makeMove(mv)) {
+        var vlRep = this_.pos.repStatus(3);
+        this_.pos.undoMakeMove();
+        if (vlRep > 0) {
+          var vlVal = this_.pos.repValue(vlRep);
+          // vlVal < -WIN_VALUE 意味着长打方（当前走棋方）作负
+          if (vlVal < -WIN_VALUE) {
+            if (pikafishSearch && pikafishSearch.onUciStderr) {
+              var uciStr = (typeof xqwMoveToUci === 'function') ? xqwMoveToUci(mv) : ('0x' + mv.toString(16));
+              pikafishSearch.onUciStderr('[棋规] 引擎着法 ' + uciStr + ' 将导致长打作负，已拒绝');
+            }
+            this_.busy = false;
+            this_.flushBoard();
+            this_.thinking.style.visibility = "hidden";
+            uciStatusEl.textContent = '引擎着法违规';
+            return;
+          }
+        }
+      } else {
+        // makeMove 返回 false（走棋后己方被将），跳过
+        this_.busy = false;
+        this_.flushBoard();
+        this_.thinking.style.visibility = "hidden";
+        uciStatusEl.textContent = '引擎着法非法';
+        return;
+      }
+
       if (pikafishSearch && pikafishSearch.lastInfo) showEngineInfo(pikafishSearch.lastInfo);
       this_.addMove(mv, true);
     } catch (e) { this_.busy = false; this_.flushBoard(); }
@@ -685,6 +715,10 @@ function initEngine() {
     return pikafishSearch.startEngine();
   }).then(function() {
     board.search = pikafishSearch;
+    // 将 Board 保存的开局 FEN 同步到引擎搜索对象
+    if (board.startFen && typeof pikafishSearch.setStartFen === 'function') {
+      pikafishSearch.setStartFen(board.startFen);
+    }
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎就绪';
     if (board.computerMove()) setTimeout(function() { board.response(); }, 300);
