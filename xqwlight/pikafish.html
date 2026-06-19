@@ -298,7 +298,7 @@ body {
 
         <div class="setting-row" style="flex-wrap:wrap; padding-bottom:4px">
           <span class="label">FEN</span>
-          <input type="text" id="fenInput" spellcheck="false"
+          <input type="text" id="fenInput" spellcheck="false" oninput="pendFen(this.value)"
             style="flex:1; min-width:120px; padding:4px 6px; border:1px solid #d0d5dd; border-radius:4px; font-size:12px; font-family:monospace">
         </div>
 
@@ -596,6 +596,9 @@ function pendSound() {
 function pendAnim() {
   _pending.animated = !_pending.animated;
   document.getElementById('animToggle').classList.toggle('on');
+}
+function pendFen(val) {
+  _pending.fen = val;
 }
 
 // 确定：应用修改 → 重启对局
