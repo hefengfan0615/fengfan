@@ -1030,9 +1030,9 @@ bool Position::see_ge(Move m, int threshold) const {
             attackers = nonCannons | cannons;
         }
 
-        else if ((bb = stmAttackers & pieces(CANNON)))
+        else if ((bb = stmAttackers & pieces(KNIGHT)))
         {
-            if ((swap = CannonValue - swap) < res)
+            if ((swap = KnightValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
 
@@ -1042,9 +1042,9 @@ bool Position::see_ge(Move m, int threshold) const {
             attackers = nonCannons | cannons;
         }
 
-        else if ((bb = stmAttackers & pieces(KNIGHT)))
+        else if ((bb = stmAttackers & pieces(CANNON)))
         {
-            if ((swap = KnightValue - swap) < res)
+            if ((swap = CannonValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
 
