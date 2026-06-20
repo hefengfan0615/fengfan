@@ -6,22 +6,14 @@ wget_or_curl=$( (command -v wget >/dev/null 2>&1 && echo "wget -qO- --timeout=30
 
 fetch_network() {
   _filename="pikafish.nnue"
-  _repo_file="../xqwlight/wasm/$_filename"
 
-  # 1. 优先从仓库获取已缓存的 NNUE 数据（超级压缩后的权重文件）
-  if [ -f "$_repo_file" ]; then
-    echo "Found $_filename in repo (xqwlight/wasm/), using cached data"
-    cp "$_repo_file" "$_filename"
-    return
-  fi
-
-  # 2. 本地已有则跳过
+  # 本地已有则跳过（不存储 .nnue 到仓库，仅本次构建使用）
   if [ -f "$_filename" ]; then
     echo "Exists $_filename, skipping download"
     return
   fi
 
-  # 3. 仓库没有本地也没有，从网络下载
+  # 从网络下载
   if [ -z "$wget_or_curl" ]; then
     >&2 printf "%s\n" "Neither wget or curl is installed." \
       "Install one of these tools to download NNUE files automatically."
@@ -29,11 +21,10 @@ fetch_network() {
   fi
 
   url="https://github.com/official-pikafish/Networks/releases/download/master-net/$_filename"
-    echo "Downloading from $url (no cached data in repo) ..."
+    echo "Downloading from $url ..."
     if $wget_or_curl "$url" > "$_filename"; then
       echo "Successfully downloaded $_filename"
     else
-      # Download was not successful, return false.
       rm -f $_filename
       echo "Failed to download $_filename from $url"
       return 1
