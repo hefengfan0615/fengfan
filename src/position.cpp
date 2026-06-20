@@ -269,9 +269,10 @@ void Position::set_check_info() const {
 
     Square ksq = king_square(~sideToMove);
 
-    // We have to take special cares about the hollow cannons and checks
+    // We have to take special cares about the hollow cannons, checks and cannon pinners
     st->needFullCheck =
-      checkers() || (attacks_bb<ROOK>(king_square(sideToMove)) & pieces(~sideToMove, CANNON));
+      checkers() || (attacks_bb<ROOK>(king_square(sideToMove)) & pieces(~sideToMove, CANNON))
+      || bool(st->pinners[~sideToMove] & pieces(CANNON));
 
     st->checkSquares[PAWN]   = attacks_bb<PAWN_TO>(ksq, sideToMove);
     st->checkSquares[KNIGHT] = attacks_bb<KNIGHT_TO>(ksq, pieces());
@@ -503,9 +504,13 @@ bool Position::gives_check(Move m) const {
     PieceType pt = type_of(moved_piece(m));
 
     // Is there a direct check?
-    if (pt == CANNON && (check_squares(ROOK) & from) && aligned(from, to, ksq))
+    if (pt == CANNON)
     {
-        if (capture(m) && (ray_pass_bb(ksq, from) & to))
+        // A cannon gives check if there's exactly 1 screen between it and the king.
+        // The moving cannon vacates 'from', which changes the screen count.
+        // Use post-move occupancy for correct detection.
+        Bitboard newOcc = (pieces() ^ from) | to;
+        if (attacks_bb<CANNON>(ksq, newOcc) & to)
             return true;
     }
     else if (check_squares(pt) & to)
