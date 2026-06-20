@@ -999,8 +999,11 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
+            kingAttacks = bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
+            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
+            nonCannons |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1011,8 +1014,11 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
+            kingAttacks = bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
+            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
+            nonCannons |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1023,9 +1029,11 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
+            kingAttacks = bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
             nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
+            nonCannons |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1036,8 +1044,11 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
+            kingAttacks = bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
+            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
+            nonCannons |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1048,8 +1059,11 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
+            kingAttacks = bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
+            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
+            nonCannons |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1059,8 +1073,11 @@ bool Position::see_ge(Move m, int threshold) const {
             swap = RookValue - swap;
             occupied ^= least_significant_square_bb(bb);
 
+            kingAttacks = bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
+            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
+            nonCannons |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
