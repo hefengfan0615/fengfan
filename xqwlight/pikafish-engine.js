@@ -101,6 +101,13 @@ function PikafishUciSearch(pos, hashLevel) {
   this.lastInfo = null;      // 存储最后一次 info depth score nodes pv
   this.onInfo = null;        // info 更新回调（实时）
   this.startFen = null;      // 开局 FEN，用于构建含完整历史着法的 UCI position 命令
+  // 请求取消机制：每次 searchUci 分配一个递增的 requestId
+  // worker.onmessage 中如果发现消息来自旧 requestId（已被取代）则直接丢弃
+  // 解决"老 worker 终止时 onAbort 消息污染新搜索"的竞态
+  this._nextRequestId = 0;
+  this._currentRequestId = -1;   // 当前活跃请求的 id，-1 表示无
+  this._currentReject = null;    // 当前活跃请求的 reject 函数
+  this._currentTimeoutId = null; // 当前活跃请求的超时定时器
 }
 
 /* 设置开局 FEN */
@@ -230,7 +237,24 @@ PikafishUciSearch.prototype.startEngine = function() {
 /* 执行 UCI 搜索，返回 bestmove 对应的 xqwlight move */
 PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, hasStartFen) {
   var self = this;
+
+  // 1) 先作废上一次未结束的请求（如果有）
+  //    —— 上一个 worker 会被下面的代码 terminate，对应 Promise 主动 reject
+  //       避免旧请求长时间挂起，同时不向用户暴露"onAbort"误报
+  if (self._currentReject) {
+    var prevReject = self._currentReject;
+    var prevTimeoutId = self._currentTimeoutId;
+    if (prevTimeoutId) { clearTimeout(prevTimeoutId); self._currentTimeoutId = null; }
+    self._currentReject = null;
+    try { prevReject(new Error('__superseded__')); } catch (e) {}
+  }
+
   return new Promise(function(resolve, reject) {
+    // 2) 为本次请求分配唯一 id，并在闭包内捕获
+    var myRequestId = ++self._nextRequestId;
+    self._currentRequestId = myRequestId;
+    self._currentReject = reject;
+
     // 构建 UCI 命令
     var commands = [];
 
@@ -258,7 +282,8 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, has
       if (self.onUciStdout) self.onUciStdout('[UCI→] ' + commands[i]);
     }
 
-    // 终止旧 worker
+    // 3) 终止旧 worker；它可能仍处于 WASM 初始化或搜索中
+    //    terminate() 后其残留消息（包括 onAbort）会被下面的 requestId 守卫过滤
     if (self.worker) {
       try { self.worker.terminate(); } catch(e) {}
       self.worker = null;
@@ -270,7 +295,27 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, has
     var worker = new Worker('worker.js');
     self.worker = worker;
 
+    // 4) 包裹 resolve / reject：仅当本请求仍为"当前"请求时才真正结算状态
+    var settled = false;
+    function settleOnce(fn, arg) {
+      if (settled) return;
+      settled = true;
+      if (self._currentRequestId === myRequestId) {
+        self._currentRequestId = -1;
+        self._currentReject = null;
+        if (self._currentTimeoutId) { clearTimeout(self._currentTimeoutId); self._currentTimeoutId = null; }
+      }
+      try { fn(arg); } catch (e) { /* swallow */ }
+    }
+
     worker.onmessage = function(ev) {
+      // 守卫：如果本 worker 已被新请求取代，丢弃这条残留消息
+      // 这是修复 onAbort 误报的关键 —— 旧 worker 终止时 Emscripten 仍可能
+      // postMessage 出 'onAbort:' 之类的 error，如果不被丢弃就会污染新搜索
+      if (self._currentRequestId !== myRequestId) return;
+      // 双重保险：worker 实例必须仍是当前激活的 worker
+      if (self.worker !== worker) return;
+
       var msg = ev.data;
       if (!msg || !msg.type) return;
 
@@ -303,20 +348,24 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, has
             if (self.onUciStdout) self.onUciStdout('[UCI←] bestmove ' + uciMove);
             var xqwMove = uciToXqwMove(uciMove);
             if (self.onUciStdout) self.onUciStdout('[调试] xqwMove=' + xqwMove + '  src=' + (xqwMove & 255) + '  dst=' + (xqwMove >> 8));
-            resolve(xqwMove);
+            settleOnce(resolve, xqwMove);
           } else {
-            reject(new Error('未获取到 bestmove'));
+            settleOnce(reject, new Error('未获取到 bestmove'));
           }
           break;
         case 'error':
           self.engineReady = false;
-          reject(new Error(msg.text));
+          // 若是 "onAbort" 且本请求已被取代，丢弃（不向用户报错）
+          if (self._currentRequestId !== myRequestId) return;
+          settleOnce(reject, new Error(msg.text));
           break;
       }
     };
 
     worker.onerror = function(ev) {
-      reject(new Error('Worker 错误: ' + ev.message));
+      if (self._currentRequestId !== myRequestId) return;
+      if (self.worker !== worker) return;
+      settleOnce(reject, new Error('Worker 错误: ' + ev.message));
     };
 
     worker.postMessage({
@@ -332,23 +381,13 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, has
     // 添加超时保护：防止 Promise 永不 resolve
     var timeoutMs = Math.max(movetimeMs + 15000, 30000);
     var timeoutId = setTimeout(function() {
+      if (self._currentRequestId !== myRequestId) return; // 已被新搜索取代
       if (self.onUciStderr) self.onUciStderr('[错误] 搜索超时 (' + timeoutMs + 'ms)，强制终止');
       try { worker.terminate(); } catch(e) {}
-      self.worker = null;
-      reject(new Error('搜索超时'));
+      if (self.worker === worker) self.worker = null;
+      settleOnce(reject, new Error('搜索超时'));
     }, timeoutMs);
-
-    // 在 resolve/reject 时清除超时
-    var originalResolve = resolve;
-    var originalReject = reject;
-    resolve = function(value) {
-      clearTimeout(timeoutId);
-      originalResolve(value);
-    };
-    reject = function(err) {
-      clearTimeout(timeoutId);
-      originalReject(err);
-    };
+    self._currentTimeoutId = timeoutId;
   });
 };
 
@@ -483,6 +522,12 @@ PikafishUciSearch.prototype.searchMain = function(depth, millis, callback) {
       callback(xqwMove);
     }
   }).catch(function(err) {
+    // 被新搜索主动取代的旧搜索（用户改设置 / 重新开始 / 悔棋触发的下一次搜索），
+    // 这是预期行为，不向用户报告"搜索失败"
+    if (err && err.message === '__superseded__') {
+      if (callback) callback(0);
+      return;
+    }
     if (self.onUciStderr) {
       self.onUciStderr('[错误] 搜索失败: ' + err.message);
     }
