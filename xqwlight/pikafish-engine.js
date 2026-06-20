@@ -88,7 +88,6 @@ function PikafishUciSearch(pos, hashLevel) {
   this.hashLevel = hashLevel || 16;
   this.wasmBinary = null;
   this.engineJs = null;
-  this.nnueData = null;    // 独立 NNUE 权重数据（与 wasm 分离，可单独缓存）
   this.worker = null;
   this.engineReady = false;
   this.pendingCallback = null;
@@ -108,13 +107,12 @@ PikafishUciSearch.prototype.setStartFen = function(fen) {
   this.startFen = fen;
 };
 
-/* 初始化：下载引擎 WASM/JS/Data（如果未缓存）或接受已有缓存 */
-PikafishUciSearch.prototype.init = function(wasmBinary, engineJs, nnueData) {
+/* 初始化：下载引擎 WASM/JS（如果未缓存）或接受已有缓存 */
+PikafishUciSearch.prototype.init = function(wasmBinary, engineJs) {
   var self = this;
-  if (wasmBinary && engineJs && nnueData) {
+  if (wasmBinary && engineJs) {
     self.wasmBinary = wasmBinary;
     self.engineJs = engineJs;
-    self.nnueData = nnueData;
     return Promise.resolve();
   }
   // 如果没有传入，从服务器加载
@@ -140,12 +138,6 @@ PikafishUciSearch.prototype._downloadEngine = function() {
     return resp.text();
   }).then(function(txt) {
     self.engineJs = txt;
-    return fetch(base + 'wasm/pikafish.data' + ENGINE_QUERY);
-  }).then(function(resp) {
-    if (!resp.ok) throw new Error('Data 下载失败: HTTP ' + resp.status);
-    return resp.arrayBuffer();
-  }).then(function(ab) {
-    self.nnueData = ab;
   });
 };
 
@@ -218,7 +210,6 @@ PikafishUciSearch.prototype.startEngine = function() {
       type: 'init',
       wasmBinary: self.wasmBinary,
       engineJs: self.engineJs,
-      nnueData: self.nnueData,
       sab: null,
       sabAvailable: false,
       commands: ["uci", "isready"]
@@ -322,7 +313,6 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, has
       type: 'init',
       wasmBinary: self.wasmBinary,
       engineJs: self.engineJs,
-      nnueData: self.nnueData,
       sab: null,
       sabAvailable: false,
       commands: commands

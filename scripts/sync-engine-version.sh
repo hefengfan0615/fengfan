@@ -3,8 +3,8 @@
 # 同步引擎版本号到前端所有入口
 #   1. 从 wasm/pikafish.wasm 里读取日期（如 20260619）。
 #   2. 追加当前 UTC 时间，生成唯一 ENGINE_VERSION（如 20260619-143052）。
-#  3. 把 wasm/js/data 复制到 xqwlight/wasm/。
-#  4. 更新 sw.js / pikafish.html / pikafish-engine.js 里的
+#   3. 把 wasm/js 复制到 xqwlight/wasm/。
+#   4. 更新 sw.js / pikafish.html / pikafish-engine.js 里的
 #      ENGINE_VERSION，确保用户每次访问都拿到最新构建。
 # ====================================================================
 set -euo pipefail
@@ -14,7 +14,6 @@ cd "$ROOT"
 
 WASM="$ROOT/wasm/pikafish.wasm"
 JS="$ROOT/wasm/pikafish.js"
-DATA="$ROOT/wasm/pikafish.data"
 
 if [ ! -f "$WASM" ] || [ ! -f "$JS" ]; then
   echo "错误：找不到 $WASM 或 $JS" >&2
@@ -38,10 +37,7 @@ echo "同步引擎版本: $ENGINE_VERSION"
 mkdir -p "$ROOT/xqwlight/wasm"
 cp "$JS" "$ROOT/xqwlight/wasm/pikafish.js"
 cp "$WASM" "$ROOT/xqwlight/wasm/pikafish.wasm"
-if [ -f "$DATA" ]; then
-  cp "$DATA" "$ROOT/xqwlight/wasm/pikafish.data"
-  echo "已复制 NNUE 数据文件"
-fi
+
 # 保存原始 .nnue 到仓库作为构建缓存（下次构建跳过网络下载）
 NNUE="$ROOT/wasm/pikafish.nnue"
 if [ -f "$NNUE" ]; then

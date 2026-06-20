@@ -47,13 +47,12 @@ jobs:
           source $EMSDK_PATH/emsdk_env.sh
           # Use COMP=gcc: em++ is clang-based, but -dumpversion reports < 16
           # which would trigger the obsolete -fexperimental-new-pass-manager flag with COMP=clang
-          # NNUE data is preloaded as a separate .data file (not embedded in wasm)
-          # This allows the wasm and data to be cached independently
+          # NNUE weights embedded directly into wasm
           make -j$(nproc) build \
             ARCH=wasm32 \
             CXX=em++ \
             COMP=gcc \
-            EXTRALDFLAGS="--preload-file pikafish.nnue" \
+            EXTRALDFLAGS="--embed-file pikafish.nnue" \
             EXE=pikafish.js
 
       - name: Create wasm directory
@@ -63,7 +62,6 @@ jobs:
         run: |
           cp pikafish.js ../wasm/
           cp pikafish.wasm ../wasm/
-          cp pikafish.data ../wasm/
           cp pikafish.nnue ../wasm/
 
       - name: Online test engine search
