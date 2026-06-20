@@ -920,7 +920,7 @@ Value Search::Worker::search(
             // until ply exceeds nmpMinPly.
             nmpMinPly = ss->ply + 3 * (depth - R) / 4;
 
-            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R + 1, false);
+            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
 
             nmpMinPly = 0;
 
@@ -934,8 +934,6 @@ Value Search::Worker::search(
     // Step 9. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
-        depth--;
 
     // Step 10. ProbCut
     // If we have a good enough capture and a reduced search
