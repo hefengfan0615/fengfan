@@ -1037,12 +1037,6 @@ moves_loop:  // When in check, search starts here
         movedPiece = pos.moved_piece(move);
         givesCheck = pos.gives_check(move);
 
-        // Check extension: extend search by 1 ply for checking moves.
-        // This helps the search see deeper into mate sequences and
-        // prevents the horizon effect where mate scores oscillate.
-        if (givesCheck)
-            extension = 1;
-
         // Calculate new depth for this move
         newDepth = depth - 1;
 
