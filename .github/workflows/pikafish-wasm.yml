@@ -47,12 +47,11 @@ jobs:
           source $EMSDK_PATH/emsdk_env.sh
           # Use COMP=gcc: em++ is clang-based, but -dumpversion reports < 16
           # which would trigger the obsolete -fexperimental-new-pass-manager flag with COMP=clang
-          # NNUE weights embedded directly into wasm
+          # Build wasm WITHOUT NNUE embedded — NNUE loaded separately at runtime
           make -j$(nproc) build \
             ARCH=wasm32 \
             CXX=em++ \
             COMP=gcc \
-            EXTRALDFLAGS="--embed-file pikafish.nnue" \
             EXE=pikafish.js
 
       - name: Create wasm directory
@@ -67,6 +66,12 @@ jobs:
       - name: Online test engine search
         working-directory: wasm
         run: |
+          echo "=== Injecting NNUE preRun hook ==="
+          # Inject a preRun hook that writes pikafish.nnue into the virtual FS
+          # before the engine starts, so the test can use the NNUE weights
+          sed -i '/var Module = typeof Module/{
+            s/var Module = typeof Module/Module["preRun"] = Module["preRun"] || []; Module["preRun"].push(function() { FS.writeFile("\/pikafish.nnue", require("fs").readFileSync("pikafish.nnue")); }); var Module = typeof Module/
+          }' pikafish.js
           echo "=== Testing engine info ==="
           node pikafish.js compiler
           echo "=== Running bench search test ==="

@@ -69,6 +69,7 @@ self.onmessage = function(ev) {
 
   var wasmBinary = m.wasmBinary;
   var engineJs   = m.engineJs;
+  var nnueData   = m.nnueData;   // NNUE 权重（独立于 wasm，可单独缓存）
   var cmds       = Array.isArray(m.commands) ? m.commands.slice() : [];
   sabAvailable   = !!m.sabAvailable;
 
@@ -102,6 +103,14 @@ self.onmessage = function(ev) {
       print: function(line) { stdout(line); },
       printErr: function(line) { stderr(line); },
     };
+    // 将 NNUE 权重写入虚拟文件系统，引擎启动时自动读取
+    if (nnueData) {
+      self.Module["preRun"] = [function() {
+        FS.writeFile('/pikafish.nnue', new Uint8Array(nnueData));
+        debug("NNUE 权重已写入虚拟文件系统 (" + (nnueData.byteLength / 1024 / 1024).toFixed(2) + " MB)");
+      }];
+      debug("已注册 NNUE preRun 钩子");
+    }
     /* 接管 WASM 实例化：使用主线程传进来的 wasmBinary，避免 worker 内部
      * 按相对路径 fetch pikafish.wasm（在 xqwlight/ 或 Blob URL 场景下会 404） */
     self.Module["instantiateWasm"] = function(info, receiveInstance) {

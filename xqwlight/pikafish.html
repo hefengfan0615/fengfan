@@ -690,17 +690,27 @@ function initEngine() {
           return buf.buffer;
         }
         chunks.push(result.value); received += result.value.length;
-        var pct = total > 0 ? (received / total) * 100 : NaN;
+        var pct = total > 0 ? (received / total) * 40 : NaN;
         setLoadProgress(pct, '下载引擎 ' + (received/1024/1024).toFixed(2) + ' MB');
         return readChunk();
       });
     }
     return readChunk();
   }).then(function(wasmBinary) {
-    setLoadProgress(95, '正在下载引擎脚本...');
+    setLoadProgress(40, '正在下载引擎脚本...');
     return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY, { cache: "no-store" }).then(function(resp) {
       if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
       return resp.text().then(function(jsText) { return { wasmBinary: wasmBinary, engineJs: jsText }; });
+    });
+  }).then(function(assets) {
+    setLoadProgress(60, '正在下载 NNUE 权重...');
+    // NNUE 使用固定 URL（无版本号），引擎更新时权重不变，命中离线缓存
+    return fetch(base + 'wasm/pikafish.nnue', { cache: "no-store" }).then(function(resp) {
+      if (!resp.ok) throw new Error('NNUE 下载失败: HTTP ' + resp.status);
+      return resp.arrayBuffer();
+    }).then(function(nnueData) {
+      assets.nnueData = nnueData;
+      return assets;
     });
   }).then(function(assets) {
     setLoadProgress(99, '正在启动引擎...');
@@ -717,6 +727,7 @@ function initEngine() {
     pikafishSearch.onInfo = function(info) { showEngineInfo(info); };
     pikafishSearch.wasmBinary = assets.wasmBinary;
     pikafishSearch.engineJs = assets.engineJs;
+    pikafishSearch.nnueData = assets.nnueData;
     return pikafishSearch.startEngine();
   }).then(function() {
     board.search = pikafishSearch;
