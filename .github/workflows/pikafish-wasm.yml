@@ -67,11 +67,11 @@ jobs:
         working-directory: wasm
         run: |
           echo "=== Injecting NNUE preRun hook ==="
-          # Inject a preRun hook that writes pikafish.nnue into the virtual FS
-          # before the engine starts, so the test can use the NNUE weights
-          sed -i '/var Module = typeof Module/{
-            s/var Module = typeof Module/Module["preRun"] = Module["preRun"] || []; Module["preRun"].push(function() { FS.writeFile("\/pikafish.nnue", require("fs").readFileSync("pikafish.nnue")); }); var Module = typeof Module/
-          }' pikafish.js
+          # Inject a preRun hook AFTER Module is initialized, so FS is available
+          # Uses sed append (a) command to add the hook after the Module init line
+          sed -i '/^var Module = typeof Module/a\
+Module["preRun"] = Module["preRun"] || [];\
+Module["preRun"].push(function() { FS.writeFile("/pikafish.nnue", require("fs").readFileSync("pikafish.nnue")); });' pikafish.js
           echo "=== Testing engine info ==="
           node pikafish.js compiler
           echo "=== Running bench search test ==="
