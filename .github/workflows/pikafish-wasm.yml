@@ -45,13 +45,23 @@ jobs:
       - name: Build WASM
         run: |
           source $EMSDK_PATH/emsdk_env.sh
-          # Use COMP=gcc: em++ is clang-based, but -dumpversion reports < 16
-          # which would trigger the obsolete -fexperimental-new-pass-manager flag with COMP=clang
           # Build wasm WITHOUT NNUE embedded — NNUE loaded separately at runtime
+          # --pre-js injects a preRun hook for Node.js test to load NNUE from local file
+          cat > preload_nnue.js << 'EOF'
+          var Module = typeof Module != "undefined" ? Module : {};
+          Module["preRun"] = Module["preRun"] || [];
+          Module["preRun"].push(function() {
+            if (typeof require !== "undefined") {
+              var fs = require("fs");
+              FS.writeFile("/pikafish.nnue", fs.readFileSync("pikafish.nnue"));
+            }
+          });
+          EOF
           make -j$(nproc) build \
             ARCH=wasm32 \
             CXX=em++ \
             COMP=gcc \
+            EXTRALDFLAGS="--pre-js preload_nnue.js" \
             EXE=pikafish.js
 
       - name: Create wasm directory
@@ -66,18 +76,6 @@ jobs:
       - name: Online test engine search
         working-directory: wasm
         run: |
-          echo "=== Injecting NNUE preRun hook ==="
-          # Write a Node.js script to inject preRun hook after Module init line
-          cat > inject_nnue.js << 'SCRIPT'
-          var fs = require('fs');
-          var js = fs.readFileSync('pikafish.js', 'utf8');
-          js = js.replace(
-            /(var Module = typeof Module[^;]*;)/,
-            '$1\nModule["preRun"] = Module["preRun"] || [];\nModule["preRun"].push(function() { FS.writeFile("/pikafish.nnue", require("fs").readFileSync("pikafish.nnue")); });'
-          );
-          fs.writeFileSync('pikafish.js', js);
-          SCRIPT
-          node inject_nnue.js
           echo "=== Testing engine info ==="
           node pikafish.js compiler
           echo "=== Running bench search test ==="
