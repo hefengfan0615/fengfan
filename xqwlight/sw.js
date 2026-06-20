@@ -29,6 +29,7 @@ var ASSETS = [
   "./worker.js",
   "./wasm/pikafish.js" + ENGINE_QUERY,
   "./wasm/pikafish.wasm" + ENGINE_QUERY,
+  "./wasm/pikafish.data" + ENGINE_QUERY,
   /* -- 棋子/棋盘图片 -- */
   "./images/board.jpg",
   "./images/thinking.gif",
@@ -50,7 +51,8 @@ var ASSETS = [
 /* 判断是否为引擎文件 */
 function isEngineFile(urlPath) {
   return urlPath.indexOf("/wasm/pikafish.js") >= 0 ||
-         urlPath.indexOf("/wasm/pikafish.wasm") >= 0;
+         urlPath.indexOf("/wasm/pikafish.wasm") >= 0 ||
+         urlPath.indexOf("/wasm/pikafish.data") >= 0;
 }
 
 /* ---------- 安装：预缓存资源 + 跳过等待 ---------- */

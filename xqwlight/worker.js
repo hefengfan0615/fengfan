@@ -69,8 +69,17 @@ self.onmessage = function(ev) {
 
   var wasmBinary = m.wasmBinary;
   var engineJs   = m.engineJs;
+  var nnueData   = m.nnueData;   // NNUE 权重数据（独立于 wasm，可单独缓存）
   var cmds       = Array.isArray(m.commands) ? m.commands.slice() : [];
   sabAvailable   = !!m.sabAvailable;
+
+  // 为 NNUE 数据文件创建 Blob URL，供 Emscripten --preload-file 机制加载
+  var nnueDataUrl = null;
+  if (nnueData) {
+    var nnueBlob = new Blob([nnueData], { type: 'application/octet-stream' });
+    nnueDataUrl = URL.createObjectURL(nnueBlob);
+    debug("NNUE 数据文件已准备 (" + (nnueData.byteLength / 1024 / 1024).toFixed(2) + " MB)");
+  }
 
   if (sabAvailable) {
     // 常驻模式：设置 SAB 视图
@@ -101,6 +110,13 @@ self.onmessage = function(ev) {
       wasmBinary: wasmBinary,
       print: function(line) { stdout(line); },
       printErr: function(line) { stderr(line); },
+      // 定位文件：NNUE 数据文件通过 Blob URL 提供，其余文件正常解析
+      locateFile: function(path, prefix) {
+        if (nnueDataUrl && path.indexOf('pikafish.data') >= 0) {
+          return nnueDataUrl;
+        }
+        return (prefix || '') + path;
+      },
     };
     /* 接管 WASM 实例化：使用主线程传进来的 wasmBinary，避免 worker 内部
      * 按相对路径 fetch pikafish.wasm（在 xqwlight/ 或 Blob URL 场景下会 404） */
