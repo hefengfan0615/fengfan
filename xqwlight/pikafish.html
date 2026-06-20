@@ -586,17 +586,19 @@ function flipBoard() {
 var settingsOverlay = document.getElementById('settingsOverlay');
 var _pending = {};
 var _settingsOpen = false;  // 设置打开时引擎搜索完成跳过走棋
+var _originalFen = "";      // 打开设置时的 FEN，用于判断 FEN 是否真的变了
 
 function openSettings() {
   _settingsOpen = true;
   // 保存当前状态到 _pending（UI 只反映 _pending）
+  _originalFen = board.pos.toFen();
   _pending = {
     compRed: board.compRed,
     compBlack: board.compBlack,
     millis: board.millis,
     sound: !!board.sound,
     animated: !!board.animated,
-    fen: board.pos.toFen()
+    fen: _originalFen
   };
   // 同步 UI 到 _pending
   document.getElementById('compRedToggle').className = 'toggle' + (_pending.compRed ? ' on' : '');
@@ -650,8 +652,14 @@ document.getElementById('settingsOk').addEventListener('click', function() {
 
   // 重启对局以应用新设置（使用自定义 FEN 或默认开局）
   var fen = (_pending.fen && _pending.fen.trim()) || STARTUP_FEN[0];
-  selMoveList.options.length = 1;
-  board.restart(fen);
+  // 仅在 FEN 实际变化时才视为"重新开始"，避免无谓地播放开局音效与清空走棋历史
+  if (fen !== _originalFen) {
+    selMoveList.options.length = 1;
+    board.restart(fen);
+  } else {
+    // FEN 未变：仅刷新显示并按新设置让电脑走棋（若有）
+    board.flushBoard();
+  }
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
   else uciStatusEl.textContent = '引擎就绪';
 });
