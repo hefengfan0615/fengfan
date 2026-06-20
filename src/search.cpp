@@ -911,13 +911,16 @@ Value Search::Worker::search(
         // Do not return unproven mate
         if (nullValue >= beta && !is_win(nullValue))
         {          
+            if (nmpMinPly || depth < 15)
+                return nullValue;
+          
             assert(!nmpMinPly);  // Recursive verification is not allowed
 
             // Do verification search at high depths, with null move pruning disabled
             // until ply exceeds nmpMinPly.
             nmpMinPly = ss->ply + 3 * (depth - R) / 4;
 
-            Value v = search<NonPV>(pos, ss, alpha, beta, depth - R + 1, !cutNode);
+            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R + 1, false);
 
             nmpMinPly = 0;
 
@@ -931,7 +934,7 @@ Value Search::Worker::search(
     // Step 9. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
+    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
         depth--;
 
     // Step 10. ProbCut
