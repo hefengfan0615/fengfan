@@ -515,6 +515,14 @@ bool Position::gives_check(Move m) const {
     if ((blockers_for_king(~sideToMove) & from) && (!aligned(from, to, ksq) || capture(m)))
         return true;
 
+    // Is there a flying general check?
+    // After the move, if the two kings face each other on the same file/rank
+    // with no pieces between, the opponent's king is in check via flying general.
+    Square ourKing  = pt == KING ? to : king_square(sideToMove);
+    Bitboard newOcc = (pieces() ^ from) | to;
+    if (attacks_bb<ROOK>(ourKing, newOcc) & ksq)
+        return true;
+
     return false;
 }
 
@@ -953,10 +961,9 @@ bool Position::see_ge(Move m, int threshold) const {
     Color    stm       = sideToMove;
     Bitboard attackers = attackers_to(to, occupied);
 
-    // Flying general
+    // Flying general - always check, even when to is not adjacent to any king
+    attackers |= attacks_bb<ROOK>(to, occupied) & pieces(KING);
     bool kingAttacks = attackers & pieces(KING);
-    if (kingAttacks)
-        attackers |= attacks_bb<ROOK>(to, occupied) & pieces(KING);
 
     Bitboard nonCannons = attackers & ~pieces(CANNON);
     Bitboard cannons    = attackers & pieces(CANNON);
