@@ -29,7 +29,6 @@ var ASSETS = [
   "./worker.js",
   "./wasm/pikafish.js" + ENGINE_QUERY,
   "./wasm/pikafish.wasm" + ENGINE_QUERY,
-  "./wasm/pikafish.data" + ENGINE_QUERY,
   /* -- 棋子/棋盘图片 -- */
   "./images/board.jpg",
   "./images/thinking.gif",
