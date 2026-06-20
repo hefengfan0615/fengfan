@@ -42,6 +42,12 @@ if [ -f "$DATA" ]; then
   cp "$DATA" "$ROOT/xqwlight/wasm/pikafish.data"
   echo "已复制 NNUE 数据文件"
 fi
+# 保存原始 .nnue 到仓库作为构建缓存（下次构建跳过网络下载）
+NNUE="$ROOT/wasm/pikafish.nnue"
+if [ -f "$NNUE" ]; then
+  cp "$NNUE" "$ROOT/xqwlight/wasm/pikafish.nnue"
+  echo "已缓存 NNUE 权重（供下次构建复用）"
+fi
 
 # 更新所有前端文件里的 ENGINE_VERSION
 FILES=(

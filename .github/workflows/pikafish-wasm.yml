@@ -64,6 +64,7 @@ jobs:
           cp pikafish.js ../wasm/
           cp pikafish.wasm ../wasm/
           cp pikafish.data ../wasm/
+          cp pikafish.nnue ../wasm/
 
       - name: Online test engine search
         working-directory: wasm
