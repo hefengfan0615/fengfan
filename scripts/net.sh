@@ -1,42 +1,26 @@
 #!/bin/sh
 
-# download commands with a 5min time-out to ensure things fail if the server stalls
-wget_or_curl=$( (command -v wget >/dev/null 2>&1 && echo "wget -qO- --timeout=300 --tries=1") ||
-  (command -v curl >/dev/null 2>&1 && echo "curl -skL --max-time 300"))
-
 fetch_network() {
   _filename="pikafish.nnue"
   _repo_cache="../xqwlight/wasm/$_filename"
 
-  # 1. 从仓库缓存获取（仅构建用，不对用户暴露）
+  # 1. 从仓库获取 NNUE 权重（由手动管理，不自动下载）
   if [ -f "$_repo_cache" ]; then
-    echo "Found $_filename in repo cache, reusing"
+    echo "Found $_filename in repo, reusing"
     cp "$_repo_cache" "$_filename"
     return
   fi
 
   # 2. 本地已有则跳过
   if [ -f "$_filename" ]; then
-    echo "Exists $_filename, skipping download"
+    echo "Exists $_filename, skipping"
     return
   fi
 
-  # 3. 从网络下载
-  if [ -z "$wget_or_curl" ]; then
-    >&2 printf "%s\n" "Neither wget or curl is installed." \
-      "Install one of these tools to download NNUE files automatically."
-    exit 1
-  fi
-
-  url="https://github.com/official-pikafish/Networks/releases/download/master-net/$_filename"
-    echo "Downloading from $url (no cache) ..."
-    if $wget_or_curl "$url" > "$_filename"; then
-      echo "Successfully downloaded $_filename"
-    else
-      rm -f $_filename
-      echo "Failed to download $_filename from $url"
-      return 1
-    fi
+  # 3. 仓库和本地都没有 → 报错退出
+  >&2 printf "%s\n" "ERROR: $_filename not found in repo or locally." \
+    "Please place the NNUE weights file at xqwlight/wasm/$_filename"
+  exit 1
 }
 
 $call fetch_network
