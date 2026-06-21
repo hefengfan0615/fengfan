@@ -953,10 +953,10 @@ bool Position::see_ge(Move m, int threshold) const {
     Color    stm       = sideToMove;
     Bitboard attackers = attackers_to(to, occupied);
 
-    // Flying general
-    bool kingAttacks = attackers & pieces(KING);
-    if (kingAttacks)
-        attackers |= attacks_bb<ROOK>(to, occupied) & pieces(KING);
+    // Flying general - kings attack each other if on same file/rank with no pieces between
+    Bitboard kingAttackers = attacks_bb<ROOK>(to, occupied) & pieces(KING);
+    attackers |= kingAttackers;
+    bool kingAttacks = bool(kingAttackers);
 
     Bitboard nonCannons = attackers & ~pieces(CANNON);
     Bitboard cannons    = attackers & pieces(CANNON);
