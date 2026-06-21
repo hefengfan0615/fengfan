@@ -508,7 +508,7 @@ bool Position::gives_check(Move m) const {
         if (capture(m) && (ray_pass_bb(ksq, from) & to))
             return true;
     }
-    else if (check_squares(pt) & to)
+    if (check_squares(pt) & to)
         return true;
 
     // Is there a discovered check?
