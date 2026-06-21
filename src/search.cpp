@@ -1711,15 +1711,15 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Step 9. Check for mate and stalemate
     // All legal moves have been searched. A special case: if no legal
     // moves were found, it is checkmate.
-    if (!moveCount && (ss->inCheck || [&] {
-            for (const auto& m : MoveList<QUIETS>(pos))
-                if (pos.legal(m))
-                    return false;
-            return true;
-        }()))
+    if (!moveCount)
     {
-        assert(!MoveList<LEGAL>(pos).size());
-        return mated_in(ss->ply);  // Plies to mate from the root
+        if (ss->inCheck)
+            return mated_in(ss->ply);  // Plies to mate from the root
+
+        // If not in check but no captures/checks were found, the position
+        // may still have quiet moves. Return a draw score rather than
+        // incorrectly treating it as checkmate.
+        return value_draw(nodes);
     }
 
     if (!is_decisive(bestValue) && bestValue > beta)
