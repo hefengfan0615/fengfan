@@ -277,9 +277,7 @@ void Position::set_check_info() const {
     st->checkSquares[KNIGHT]  = attacks_bb<KNIGHT_TO>(ksq, pieces());
     st->checkSquares[CANNON]  = attacks_bb<CANNON>(ksq, pieces());
     st->checkSquares[ROOK]    = attacks_bb<ROOK>(ksq, pieces());
-    st->checkSquares[BISHOP]  = attacks_bb<BISHOP>(ksq);
-    st->checkSquares[ADVISOR] = attacks_bb<ADVISOR>(ksq);
-    st->checkSquares[KING]    = 0;
+    st->checkSquares[KING]    = st->checkSquares[ADVISOR] = st->checkSquares[BISHOP] = 0;
 
     Bitboard hollowCannons = st->checkSquares[ROOK] & pieces(sideToMove, CANNON);
     if (hollowCannons)
@@ -425,9 +423,7 @@ Bitboard Position::checkers_to(Color c, Square s, Bitboard occupied) const {
     return ((attacks_bb<PAWN_TO>(s, c) & pieces(PAWN))
             | (attacks_bb<KNIGHT_TO>(s, occupied) & pieces(KNIGHT))
             | (attacks_bb<ROOK>(s, occupied) & pieces(KING, ROOK))
-            | (attacks_bb<CANNON>(s, occupied) & pieces(CANNON))
-            | (attacks_bb<BISHOP>(s) & pieces(BISHOP))
-            | (attacks_bb<ADVISOR>(s) & pieces(ADVISOR)))
+            | (attacks_bb<CANNON>(s, occupied) & pieces(CANNON)))
          & pieces(c);
 }
 
