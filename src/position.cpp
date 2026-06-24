@@ -273,11 +273,11 @@ void Position::set_check_info() const {
     st->needFullCheck =
       checkers() || (attacks_bb<ROOK>(king_square(sideToMove)) & pieces(~sideToMove, CANNON));
 
-    st->checkSquares[PAWN]    = attacks_bb<PAWN_TO>(ksq, sideToMove);
-    st->checkSquares[KNIGHT]  = attacks_bb<KNIGHT_TO>(ksq, pieces());
-    st->checkSquares[CANNON]  = attacks_bb<CANNON>(ksq, pieces());
-    st->checkSquares[ROOK]    = attacks_bb<ROOK>(ksq, pieces());
-    st->checkSquares[KING]    = st->checkSquares[ADVISOR] = st->checkSquares[BISHOP] = 0;
+    st->checkSquares[PAWN]   = attacks_bb<PAWN_TO>(ksq, sideToMove);
+    st->checkSquares[KNIGHT] = attacks_bb<KNIGHT_TO>(ksq, pieces());
+    st->checkSquares[CANNON] = attacks_bb<CANNON>(ksq, pieces());
+    st->checkSquares[ROOK]   = attacks_bb<ROOK>(ksq, pieces());
+    st->checkSquares[KING] = st->checkSquares[ADVISOR] = st->checkSquares[BISHOP] = 0;
 
     Bitboard hollowCannons = st->checkSquares[ROOK] & pieces(sideToMove, CANNON);
     if (hollowCannons)
@@ -508,7 +508,7 @@ bool Position::gives_check(Move m) const {
         if (capture(m) && (ray_pass_bb(ksq, from) & to))
             return true;
     }
-    if (check_squares(pt) & to)
+    else if (check_squares(pt) & to)
         return true;
 
     // Is there a discovered check?
@@ -953,10 +953,10 @@ bool Position::see_ge(Move m, int threshold) const {
     Color    stm       = sideToMove;
     Bitboard attackers = attackers_to(to, occupied);
 
-    // Flying general - kings attack each other if on same file/rank with no pieces between
-    Bitboard kingAttackers = attacks_bb<ROOK>(to, occupied) & pieces(KING);
-    attackers |= kingAttackers;
-    bool kingAttacks = bool(kingAttackers);
+    // Flying general
+    bool kingAttacks = attackers & pieces(KING);
+    if (kingAttacks)
+        attackers |= attacks_bb<ROOK>(to, occupied) & pieces(KING);
 
     Bitboard nonCannons = attackers & ~pieces(CANNON);
     Bitboard cannons    = attackers & pieces(CANNON);
@@ -992,10 +992,8 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
-            kingAttacks |= bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
-            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1005,13 +1003,6 @@ bool Position::see_ge(Move m, int threshold) const {
             if ((swap = BishopValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
-
-            kingAttacks |= bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
-            nonCannons |=
-              attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
-            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
-            cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
-            attackers = nonCannons | cannons;
         }
 
         else if ((bb = stmAttackers & pieces(ADVISOR)))
@@ -1020,11 +1011,7 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
-            kingAttacks |= bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
-            nonCannons |=
-              attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
             nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
-            cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
 
@@ -1034,10 +1021,6 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
-            kingAttacks |= bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
-            nonCannons |=
-              attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
-            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
@@ -1047,25 +1030,15 @@ bool Position::see_ge(Move m, int threshold) const {
             if ((swap = KnightValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
-
-            kingAttacks |= bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
-            nonCannons |=
-              attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
-            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
-            cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
-            attackers = nonCannons | cannons;
         }
 
         else if ((bb = stmAttackers & pieces(ROOK)))
         {
-            if ((swap = RookValue - swap) < res)
-                break;
+            swap = RookValue - swap;
             occupied ^= least_significant_square_bb(bb);
 
-            kingAttacks |= bool(attacks_bb<ROOK>(to, occupied) & pieces(KING));
             nonCannons |=
               attacks_bb<ROOK>(to, occupied) & (kingAttacks ? pieces(KING, ROOK) : pieces(ROOK));
-            nonCannons |= attacks_bb<KNIGHT_TO>(to, occupied) & pieces(KNIGHT);
             cannons   = attacks_bb<CANNON>(to, occupied) & pieces(CANNON);
             attackers = nonCannons | cannons;
         }
