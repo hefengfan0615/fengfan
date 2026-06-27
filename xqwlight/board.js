@@ -489,7 +489,7 @@ Board.prototype.drawArrow = function(mv, color) {
   line.setAttribute("x2", cx2);
   line.setAttribute("y2", cy2);
   line.setAttribute("stroke", strokeColor);
-  line.setAttribute("stroke-width", "3.5");
+  line.setAttribute("stroke-width", "5");
   line.setAttribute("stroke-linecap", "round");
   line.setAttribute("opacity", "0.85");
   g.appendChild(line);

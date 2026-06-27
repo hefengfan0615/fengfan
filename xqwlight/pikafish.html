@@ -257,7 +257,6 @@ body {
       <div class="board-toolbar">
         <button class="primary" onclick="restart_click()">重新开始</button>
         <button onclick="retract_click()">悔棋</button>
-        <button onclick="hint_click()">提示</button>
         <button onclick="flipBoard()">翻转棋盘</button>
         <button onclick="forceRefresh()" id="btnForce">刷新引擎</button>
       </div>
@@ -317,6 +316,11 @@ body {
         <div class="setting-row">
           <span class="label">动画</span>
           <span class="toggle" id="animToggle" onclick="pendAnim()"></span>
+        </div>
+
+        <div class="setting-row">
+          <span class="label">显示箭头</span>
+          <span class="toggle on" id="arrowToggle" onclick="pendShowArrows()"></span>
         </div>
 
         <div class="settings-actions">
@@ -486,6 +490,7 @@ board.computer = 1;          // 兼容 xqwlight，由 compRed/compBlack 驱动
 board.compRed = false;       // 电脑执红
 board.compBlack = true;      // 电脑执黑（默认）
 board.displayFlipped = false;
+board.showArrows = true;
 
 // 重写 computerMove：支持四种模式
 board.computerMove = function() {
@@ -510,10 +515,8 @@ Board.prototype.response = function() {
   var this_ = this;
   uciStatusEl.textContent = '引擎思考中...';
 
-  // 立即用上次缓存的 PV 显示箭头（无延迟）
-  if (pikafishSearch && pikafishSearch.lastInfo) {
-    updatePvArrows(pikafishSearch.lastInfo);
-  }
+  // 清除旧箭头，等待引擎 onInfo 回调绘制最新 PV 箭头
+  this_.clearArrows();
 
   var finishSearch = function(mv) {
     // 思考完毕，清除 PV 箭头再走棋
@@ -585,19 +588,18 @@ function moveList_change() {
   board.flushBoard();
 }
 
-/* ---------- 提示：在棋盘上显示引擎最佳着法箭头 ---------- */
-function hint_click() {
-  if (board.busy || board.result != RESULT_UNKNOWN) return;
-  if (!pikafishSearch || !pikafishSearch.lastInfo) return;
-  var info = pikafishSearch.lastInfo;
-  if (!info.pv || info.pv.length === 0) return;
-  var uciMove = info.pv[0];
-  var xqwMove = uciToXqwMove(uciMove);
-  if (xqwMove <= 0) return;
-  // 判断当前走棋方颜色
-  var isRed = (board.pos.sdPlayer === 0);
+/* ---------- 引擎 PV 箭头：思考过程中显示将来两步 ---------- */
+function updatePvArrows(info) {
+  if (!board.showArrows) return;
+  if (!info || !info.pv || info.pv.length === 0) return;
   board.clearArrows();
-  board.drawArrow(xqwMove, isRed ? 'red' : 'black');
+  var sd = board.pos.sdPlayer;
+  for (var i = 0; i < Math.min(info.pv.length, 2); i++) {
+    var xqwMove = uciToXqwMove(info.pv[i]);
+    if (xqwMove <= 0) continue;
+    var isRed = (i === 0) ? (sd === 0) : (sd === 1);
+    board.drawArrow(xqwMove, isRed ? 'red' : 'black');
+  }
 }
 
 /* ---------- 引擎 PV 箭头：思考过程中显示将来两步 ---------- */
@@ -640,6 +642,7 @@ function openSettings() {
     millis: board.millis,
     sound: !!board.sound,
     animated: !!board.animated,
+    showArrows: !!board.showArrows,
     fen: _originalFen
   };
   // 同步 UI 到 _pending
@@ -649,6 +652,7 @@ function openSettings() {
   document.getElementById('timeDisplay').textContent = (_pending.millis / 1000).toFixed(1);
   document.getElementById('soundToggle').className = 'toggle' + (_pending.sound ? ' on' : '');
   document.getElementById('animToggle').className = 'toggle' + (_pending.animated ? ' on' : '');
+  document.getElementById('arrowToggle').className = 'toggle' + (_pending.showArrows ? ' on' : '');
   document.getElementById('fenInput').value = _pending.fen;
   settingsOverlay.classList.add('open');
 }
@@ -676,6 +680,10 @@ function pendAnim() {
   _pending.animated = !_pending.animated;
   document.getElementById('animToggle').classList.toggle('on');
 }
+function pendShowArrows() {
+  _pending.showArrows = !_pending.showArrows;
+  document.getElementById('arrowToggle').classList.toggle('on');
+}
 function pendFen(val) {
   _pending.fen = val;
 }
@@ -687,6 +695,8 @@ document.getElementById('settingsOk').addEventListener('click', function() {
   board.millis = _pending.millis;
   board.setSound(_pending.sound);
   board.animated = _pending.animated;
+  board.showArrows = _pending.showArrows;
+  board.clearArrows();  // 关闭箭头则立即清除
   board.displayFlipped = false;  // 重置翻转，确保棋盘方向与新的 compRed/compBlack 一致
 
   settingsOverlay.classList.remove('open');
@@ -867,6 +877,7 @@ function saveGameState() {
       millis: board.millis,
       sound: !!board.sound,
       animated: !!board.animated,
+      showArrows: !!board.showArrows,
       displayFlipped: !!board.displayFlipped
     }
   };
@@ -888,6 +899,7 @@ function restoreGameState() {
       board.millis = state.settings.millis || 3000;
       board.setSound(state.settings.sound !== false);
       board.animated = state.settings.animated !== false;
+      board.showArrows = state.settings.showArrows !== false;
       board.displayFlipped = !!state.settings.displayFlipped;
     }
 
