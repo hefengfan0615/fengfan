@@ -482,11 +482,22 @@ bool Position::pseudo_legal(const Move m) const {
 
     // Handle the special cases
     if (type_of(pc) == PAWN)
-        return bool(attacks_bb<PAWN>(from, us) & to);
+    {
+        if (!(attacks_bb<PAWN>(from, us) & to))
+            return false;
+    }
     else if (type_of(pc) == CANNON && !capture(m))
-        return bool(attacks_bb<ROOK>(from, pieces()) & to);
-    else
-        return bool(attacks_bb(type_of(pc), from, pieces()) & to);
+    {
+        if (!(attacks_bb<ROOK>(from, pieces()) & to))
+            return false;
+    }
+    else if (!(attacks_bb(type_of(pc), from, pieces()) & to))
+        return false;
+
+    if (checkers())
+        return MoveList<EVASIONS>(*this).contains(m);
+
+    return true;
 }
 
 
@@ -888,6 +899,21 @@ void Position::update_piece_threats(Piece pc, bool putPiece, Square s, DirtyThre
     }
 }
 
+Key Position::prefetch_key(Move m) const {
+    Square from     = m.from_sq();
+    Square to       = m.to_sq();
+    Piece  pc       = piece_on(from);
+    Piece  captured = piece_on(to);
+    Key    k        = st->key ^ Zobrist::side;
+
+    k ^= Zobrist::psq[captured][to] ^ Zobrist::psq[pc][to] ^ Zobrist::psq[pc][from];
+
+    if (captured)
+        return k;
+
+    return adjust_key60<true>(k);
+}
+
 
 // Used to do a "null move": it flips
 // the side to move without executing any move on the board.
@@ -907,6 +933,8 @@ void Position::do_null_move(StateInfo& newSt) {
     st->key ^= Zobrist::side;
 
     st->pliesFromNull = 0;
+
+    st->capturedPiece = NO_PIECE;
 
     sideToMove = ~sideToMove;
 
