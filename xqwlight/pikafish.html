@@ -510,8 +510,10 @@ Board.prototype.response = function() {
   var this_ = this;
   uciStatusEl.textContent = '引擎思考中...';
 
-  // 清除旧箭头，等待引擎 PV 更新时再绘制 PV 箭头
-  this_.clearArrows();
+  // 立即用上次缓存的 PV 显示箭头（无延迟）
+  if (pikafishSearch && pikafishSearch.lastInfo) {
+    updatePvArrows(pikafishSearch.lastInfo);
+  }
 
   var finishSearch = function(mv) {
     // 思考完毕，清除 PV 箭头再走棋
@@ -776,7 +778,7 @@ function initEngine() {
     pikafishSearch.onInfo = function(info) {
       showEngineInfo(info);
       // 引擎思考过程中实时更新 PV 箭头
-      if (board.busy && board.computerMove()) {
+      if (board.busy) {
         updatePvArrows(info);
       }
     };
