@@ -510,11 +510,11 @@ Board.prototype.response = function() {
   var this_ = this;
   uciStatusEl.textContent = '引擎思考中...';
 
-  // 显示最近两步的思考箭头
-  this_.showThinkingArrows();
+  // 清除旧箭头，等待引擎 PV 更新时再绘制 PV 箭头
+  this_.clearArrows();
 
   var finishSearch = function(mv) {
-    // 思考完毕，清除箭头
+    // 思考完毕，清除 PV 箭头再走棋
     this_.clearArrows();
     try {
       // 设置打开时跳过走棋（防止引擎搜索完成干扰设置后的新对局）
@@ -596,6 +596,20 @@ function hint_click() {
   var isRed = (board.pos.sdPlayer === 0);
   board.clearArrows();
   board.drawArrow(xqwMove, isRed ? 'red' : 'black');
+}
+
+/* ---------- 引擎 PV 箭头：思考过程中显示将来两步 ---------- */
+function updatePvArrows(info) {
+  if (!info || !info.pv || info.pv.length === 0) return;
+  board.clearArrows();
+  var sd = board.pos.sdPlayer; // 当前走棋方
+  for (var i = 0; i < Math.min(info.pv.length, 2); i++) {
+    var xqwMove = uciToXqwMove(info.pv[i]);
+    if (xqwMove <= 0) continue;
+    // 第 1 步是当前走棋方的着法，第 2 步是对手的应着
+    var isRed = (i === 0) ? (sd === 0) : (sd === 1);
+    board.drawArrow(xqwMove, isRed ? 'red' : 'black');
+  }
 }
 
 /* ---------- 翻转棋盘（仅显示翻转，不影响 AI 走棋方） ---------- */
@@ -759,7 +773,13 @@ function initEngine() {
     };
     pikafishSearch.onUciStderr = function(text) { console.warn('[pikafish] ' + text); };
     pikafishSearch.onUciDebug = function(text) {};
-    pikafishSearch.onInfo = function(info) { showEngineInfo(info); };
+    pikafishSearch.onInfo = function(info) {
+      showEngineInfo(info);
+      // 引擎思考过程中实时更新 PV 箭头
+      if (board.busy && board.computerMove()) {
+        updatePvArrows(info);
+      }
+    };
     pikafishSearch.wasmBinary = assets.wasmBinary;
     pikafishSearch.engineJs = assets.engineJs;
     pikafishSearch.nnueData = assets.nnueData;

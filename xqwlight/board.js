@@ -517,19 +517,3 @@ Board.prototype.clearArrows = function() {
   }
 };
 
-/**
- * 在引擎思考时显示最近两步的箭头
- */
-Board.prototype.showThinkingArrows = function() {
-  this.clearArrows();
-  var mvList = this.pos.mvList;
-  var len = mvList.length;
-  if (len < 2) return;
-  var start = Math.max(1, len - 2);
-  for (var i = start; i < len; i++) {
-    var mv = mvList[i];
-    if (mv <= 0) continue;
-    // 第 1、3、5……步为红方，第 2、4、6……步为黑方
-    this.drawArrow(mv, (i % 2 === 1) ? 'red' : 'black');
-  }
-};
