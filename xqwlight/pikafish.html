@@ -564,7 +564,6 @@ function retract_click() {
   board.retract();
   selMoveList.options.length = board.pos.mvList.length;
   selMoveList.selectedIndex = selMoveList.options.length - 1;
-  saveGameState();
 }
 
 function moveList_change() {
@@ -574,14 +573,12 @@ function moveList_change() {
   if (from > to + 1) { for (var i = to + 1; i < from; i++) board.pos.undoMakeMove(); }
   else { for (var i = from; i <= to; i++) board.pos.makeMove(parseInt(selMoveList.options[i].value)); }
   board.flushBoard();
-  saveGameState();
 }
 
 /* ---------- 翻转棋盘（仅显示翻转，不影响 AI 走棋方） ---------- */
 function flipBoard() {
   board.displayFlipped = !board.displayFlipped;
   board.flushBoard();
-  saveGameState();
 }
 
 /* ---------- 设置面板 ----------
