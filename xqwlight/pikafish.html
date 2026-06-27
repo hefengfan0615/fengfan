@@ -808,7 +808,6 @@ function forceRefresh() {
 
 /* ---------- localStorage 缓存 ---------- */
 function saveGameState() {
-  if (board.busy) return;
   var mvList = board.pos.mvList;
   var moves = [];
   for (var i = 1; i < mvList.length; i++) {
