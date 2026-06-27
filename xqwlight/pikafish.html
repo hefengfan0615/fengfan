@@ -363,6 +363,7 @@ var LIMIT_DEPTH = 64;
  * 改动此值即可让所有用户重新拉取最新引擎资源。 */
 var ENGINE_VERSION = "20260627-020606";
 var ENGINE_QUERY = "?v=" + ENGINE_VERSION;
+var STORAGE_KEY = "xiangqi_state";
 var uciStatusEl = document.getElementById('uciStatus');
 var engineVersion = '';
 
@@ -535,6 +536,7 @@ board.onAddMove = function() {
   try { selMoveList.add(createOption(text, value, false)); }
   catch (e) { selMoveList.add(createOption(text, value, true)); }
   selMoveList.scrollTop = selMoveList.scrollHeight;
+  saveGameState();
 };
 
 function createOption(text, value, ie8) {
@@ -547,6 +549,7 @@ function createOption(text, value, ie8) {
 
 /* ---------- 控制 ---------- */
 function restart_click() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
   selMoveList.options.length = 1;
   selMoveList.selectedIndex = 0;
   board.restart(STARTUP_FEN[0]);
@@ -561,6 +564,7 @@ function retract_click() {
   board.retract();
   selMoveList.options.length = board.pos.mvList.length;
   selMoveList.selectedIndex = selMoveList.options.length - 1;
+  saveGameState();
 }
 
 function moveList_change() {
@@ -570,12 +574,14 @@ function moveList_change() {
   if (from > to + 1) { for (var i = to + 1; i < from; i++) board.pos.undoMakeMove(); }
   else { for (var i = from; i <= to; i++) board.pos.makeMove(parseInt(selMoveList.options[i].value)); }
   board.flushBoard();
+  saveGameState();
 }
 
 /* ---------- 翻转棋盘（仅显示翻转，不影响 AI 走棋方） ---------- */
 function flipBoard() {
   board.displayFlipped = !board.displayFlipped;
   board.flushBoard();
+  saveGameState();
 }
 
 /* ---------- 设置面板 ----------
@@ -660,6 +666,7 @@ document.getElementById('settingsOk').addEventListener('click', function() {
     // FEN 未变：仅刷新显示并按新设置让电脑走棋（若有）
     board.flushBoard();
   }
+  saveGameState();
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
   else uciStatusEl.textContent = '引擎就绪';
 });
@@ -743,6 +750,10 @@ function initEngine() {
     if (board.startFen && typeof pikafishSearch.setStartFen === 'function') {
       pikafishSearch.setStartFen(board.startFen);
     }
+    // 还原缓存状态，无缓存则用默认开局
+    if (!restoreGameState()) {
+      board.restart(STARTUP_FEN[0]);
+    }
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎就绪';
     if (board.computerMove()) setTimeout(function() { board.response(); }, 300);
@@ -755,10 +766,8 @@ function initEngine() {
 
 /* ---------- 页面加载 ---------- */
 window.addEventListener('load', function() {
-  board.restart(STARTUP_FEN[0]);
   initEngine();
   setupServiceWorker();
-  // 同步设置面板初始状态
   document.getElementById('timeDisplay').textContent = '3.0';
   document.getElementById('compBlackToggle').classList.add('on');
 });
@@ -798,6 +807,78 @@ function forceRefresh() {
   document.getElementById('btnForce').disabled = true;
   document.getElementById('btnForce').textContent = '清理中…';
   navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+}
+
+/* ---------- localStorage 缓存 ---------- */
+function saveGameState() {
+  if (board.busy) return;
+  var mvList = board.pos.mvList;
+  var moves = [];
+  for (var i = 1; i < mvList.length; i++) {
+    moves.push(mvList[i]);
+  }
+  var state = {
+    startFen: board.startFen || STARTUP_FEN[0],
+    moves: moves,
+    settings: {
+      compRed: board.compRed,
+      compBlack: board.compBlack,
+      millis: board.millis,
+      sound: !!board.sound,
+      animated: !!board.animated,
+      displayFlipped: !!board.displayFlipped
+    }
+  };
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function restoreGameState() {
+  var saved;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) {}
+  if (!saved) return false;
+  try {
+    var state = JSON.parse(saved);
+    if (!state.startFen) return false;
+
+    // 还原设置（不触发引擎搜索）
+    if (state.settings) {
+      board.compRed = !!state.settings.compRed;
+      board.compBlack = state.settings.compBlack !== false;
+      board.millis = state.settings.millis || 3000;
+      board.setSound(state.settings.sound !== false);
+      board.animated = state.settings.animated !== false;
+      board.displayFlipped = !!state.settings.displayFlipped;
+    }
+
+    // 还原棋局（直接设 FEN + 回放走法，避免 board.restart 触发 response）
+    board.result = RESULT_UNKNOWN;
+    board.pos.fromFen(state.startFen);
+    board.startFen = state.startFen;
+    if (board.search && typeof board.search.setStartFen === 'function') {
+      board.search.setStartFen(state.startFen);
+    }
+
+    selMoveList.options.length = 1;
+
+    var moves = state.moves || [];
+    for (var i = 0; i < moves.length; i++) {
+      var mv = moves[i];
+      board.pos.makeMove(mv);
+      board.mvLast = mv;
+      var counter = (board.pos.mvList.length >> 1);
+      var space = (counter > 99 ? "    " : "   ");
+      counter = (counter > 9 ? "" : " ") + counter + ".";
+      var text = (board.pos.sdPlayer == 0 ? space : counter) + move2Iccs(mv);
+      try { selMoveList.add(createOption(text, "" + mv, false)); }
+      catch (e) { selMoveList.add(createOption(text, "" + mv, true)); }
+    }
+    selMoveList.selectedIndex = selMoveList.options.length - 1;
+    board.flushBoard();
+    return true;
+  } catch (e) {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e2) {}
+    return false;
+  }
 }
 
     --></script>

@@ -227,8 +227,6 @@ PikafishUciSearch.prototype.startEngine = function() {
       wasmBinary: self.wasmBinary,
       engineJs: self.engineJs,
       nnueData: self.nnueData,
-      sab: null,
-      sabAvailable: false,
       commands: ["uci", "isready"]
     });
   });
@@ -373,8 +371,6 @@ PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, has
       wasmBinary: self.wasmBinary,
       engineJs: self.engineJs,
       nnueData: self.nnueData,
-      sab: null,
-      sabAvailable: false,
       commands: commands
     });
 

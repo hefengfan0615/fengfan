@@ -1,13 +1,9 @@
 /* ======================================================================
- *  Pikafish WASM Engine Worker — 常驻模式
+ *  Pikafish WASM Engine Worker — 命令流模式
  *
- *  数据流：主线程 (test.html) → SharedArrayBuffer (SAB) → 本 Worker
- *  stdinByte() 从 SAB 读，空则 Atomics.wait 挂起，永不返回 null (EOF)
- *  这样引擎 (callMain) 会一直运行，随时接收新命令。
- *
- *  备用模式（sabAvailable=false）：
- *    退回到"命令流"模式 — commands 参数中包含所有 UCI 命令，
- *    读完返回 null，引擎会退出。每次点击会重新创建 Worker。
+ *  主线程通过 postMessage({type:'init', commands:[...]}) 传入 UCI 命令，
+ *  stdinByte() 从命令流读取，读完返回 null (EOF)，引擎自动退出。
+ *  每次搜索会创建新的 Worker。
  *
  *  通信协议（Engine → Host）：
  *    { type: 'stdout', text: string }
@@ -27,39 +23,14 @@ function debug(text)  { postMsg({ type: 'debug',  text: String(text) }); }
 function stdout(text) { postMsg({ type: 'stdout', text: String(text) }); }
 function stderr(text) { postMsg({ type: 'stderr', text: String(text) }); }
 
-/* ---------- SAB 共享环形缓冲区 ---------- */
-let sabInt32 = null;   // [readPos, writePos]
-let sabBytes  = null;   // 数据区
-let sabDataBytes = 65536;
-let sabAvailable = false;
-
-/* ---------- 备用模式：命令流 ---------- */
+/* ---------- 命令流 ---------- */
 let commandStream = "";
 let commandPos = 0;
 
-/* ---------- stdinByte：两个模式统一入口 ---------- */
+/* ---------- stdin：从命令流读取，返回 null = EOF ---------- */
 function stdinByte() {
-  if (sabAvailable) {
-    // 常驻模式：从 SAB 读，空则等待
-    // 读取 writePos 的值，然后循环直到有新数据
-    // 使用 Atomics.wait 挂起等待，直到主线程 notify
-    while (true) {
-      const r = Atomics.load(sabInt32, 0);
-      const w = Atomics.load(sabInt32, 1);
-      if (r < w) {
-        // 有数据
-        const byte = sabBytes[r % sabDataBytes];
-        Atomics.store(sabInt32, 0, r + 1);
-        return byte;
-      }
-      // 没有数据 — 阻塞等待 writePos 变化
-      Atomics.wait(sabInt32, 1, w);
-    }
-  } else {
-    // 备用模式：从命令流读，返回 null = EOF
-    if (commandPos >= commandStream.length) return null;
-    return commandStream.charCodeAt(commandPos++);
-  }
+  if (commandPos >= commandStream.length) return null;
+  return commandStream.charCodeAt(commandPos++);
 }
 
 /* ---------- 消息接收与主流程 ---------- */
@@ -69,35 +40,17 @@ self.onmessage = function(ev) {
 
   var wasmBinary = m.wasmBinary;
   var engineJs   = m.engineJs;
-  var nnueData   = m.nnueData;   // NNUE 权重（独立于 wasm，可单独缓存）
+  var nnueData   = m.nnueData;
   var cmds       = Array.isArray(m.commands) ? m.commands.slice() : [];
-  sabAvailable   = !!m.sabAvailable;
 
-  if (sabAvailable) {
-    // 常驻模式：设置 SAB 视图
-    try {
-      sabInt32 = new Int32Array(m.sab, 0, 2);
-      sabBytes  = new Uint8Array(m.sab, 8);
-      sabDataBytes = sabBytes.length;
-      debug("SAB 常驻模式：数据区 " + sabDataBytes + " 字节");
-    } catch (e) {
-      debug("SAB 视图创建失败，回退到命令流模式：" + e.message);
-      sabAvailable = false;
-    }
-  }
+  commandStream = cmds.map(function(s) { return s + "\n"; }).join("");
+  commandPos = 0;
+  debug("命令流模式：" + cmds.length + " 条命令 / " + commandStream.length + " 字节");
 
-  if (!sabAvailable) {
-    // 备用模式：构造命令文本
-    commandStream = cmds.map(function(s) { return s + "\n"; }).join("");
-    commandPos = 0;
-    debug("备用模式：" + cmds.length + " 条命令 / " + commandStream.length + " 字节");
-  }
-
-  /* 步骤 1: 构建 self.Module */
+  /* 构建 self.Module */
   try {
     self.Module = {
-      noInitialRun: true,       // onRuntimeInitialized 中手动 callMain
-      noExitRuntime: sabAvailable,  // 常驻模式：不要退出运行时
+      noInitialRun: true,
       arguments: [],
       wasmBinary: wasmBinary,
       print: function(line) { stdout(line); },
@@ -160,12 +113,8 @@ self.onmessage = function(ev) {
           }
         }
       }
-      // 备用模式（命令流）：引擎已执行完毕，发送 done
-      // 注意：Emscripten 的 onExit 可能因编译选项不会触发
-      // 所以在此处显式发送 done
-      if (!sabAvailable) {
-        postMsg({ type: 'done', code: exitCode });
-      }
+      // 命令流模式：引擎已执行完毕，发送 done
+      postMsg({ type: 'done', code: exitCode });
     };
     self.Module["onExit"] = function(code) {
       debug("onExit: code=" + code);
@@ -175,7 +124,7 @@ self.onmessage = function(ev) {
       debug("onAbort: " + what);
       postMsg({ type: 'error', text: "onAbort: " + String(what) });
     };
-    debug("Module 已构建（" + (sabAvailable ? "SAB 常驻" : "备用命令流") + "模式）");
+    debug("Module 已构建（命令流模式）");
   } catch (e) {
     postMsg({ type: 'error', text: "构建 Module 失败: " + e.message });
     return;
