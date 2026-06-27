@@ -145,6 +145,20 @@ function Board(container, images, sounds) {
   this.dummy.style.position = "absolute";
   container.appendChild(this.dummy);
 
+  // SVG overlay for arrows (thinking arrows, hint arrows)
+  this._arrowSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  var as = this._arrowSvg;
+  as.setAttribute("viewBox", "0 0 " + BOARD_WIDTH + " " + BOARD_HEIGHT);
+  as.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  as.style.position = "absolute";
+  as.style.top = "0";
+  as.style.left = "0";
+  as.style.width = "100%";
+  as.style.height = "100%";
+  as.style.pointerEvents = "none";
+  as.style.zIndex = "300";
+  container.appendChild(as);
+
   // 布局
   this.relayout = function() {
     var scale = Board_computeScale(this_);
@@ -405,6 +419,7 @@ Board.prototype.drawSquare = function(sq, selected) {
 }
 
 Board.prototype.flushBoard = function() {
+  this.clearArrows();
   this.mvLast = this.pos.mvList[this.pos.mvList.length - 1];
   for (var sq = 0; sq < 256; sq ++) {
     if (IN_BOARD(sq)) {
@@ -450,3 +465,71 @@ Board.prototype.setSound = function(sound) {
     this.playSound("click");
   }
 }
+
+/* ---------- 箭头绘制（思考箭头 / 提示箭头） ---------- */
+
+/**
+ * 在棋盘上绘制一个箭头，从着法起点指向终点
+ * @param {number} mv - xqwlight 内部 move（SRC/DST 编码）
+ * @param {string} color - 'red' 或 'black'
+ */
+Board.prototype.drawArrow = function(mv, color) {
+  var sqSrc = this.flipped(SRC(mv));
+  var sqDst = this.flipped(DST(mv));
+  var cx1 = SQ_X(sqSrc) + SQUARE_SIZE / 2;
+  var cy1 = SQ_Y(sqSrc) + SQUARE_SIZE / 2;
+  var cx2 = SQ_X(sqDst) + SQUARE_SIZE / 2;
+  var cy2 = SQ_Y(sqDst) + SQUARE_SIZE / 2;
+  var strokeColor = color === 'red' ? '#e74c3c' : '#2c3e50';
+  var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  // 箭杆
+  var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", cx1);
+  line.setAttribute("y1", cy1);
+  line.setAttribute("x2", cx2);
+  line.setAttribute("y2", cy2);
+  line.setAttribute("stroke", strokeColor);
+  line.setAttribute("stroke-width", "3.5");
+  line.setAttribute("stroke-linecap", "round");
+  line.setAttribute("opacity", "0.85");
+  g.appendChild(line);
+  // 箭头三角
+  var angle = Math.atan2(cy2 - cy1, cx2 - cx1);
+  var headLen = 14;
+  var spread = Math.PI / 7;
+  var poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  var pts = [
+    cx2 + "," + cy2,
+    (cx2 - headLen * Math.cos(angle - spread)) + "," + (cy2 - headLen * Math.sin(angle - spread)),
+    (cx2 - headLen * Math.cos(angle + spread)) + "," + (cy2 - headLen * Math.sin(angle + spread))
+  ].join(" ");
+  poly.setAttribute("points", pts);
+  poly.setAttribute("fill", strokeColor);
+  poly.setAttribute("opacity", "0.85");
+  g.appendChild(poly);
+  this._arrowSvg.appendChild(g);
+};
+
+/** 清空所有箭头 */
+Board.prototype.clearArrows = function() {
+  while (this._arrowSvg.firstChild) {
+    this._arrowSvg.removeChild(this._arrowSvg.firstChild);
+  }
+};
+
+/**
+ * 在引擎思考时显示最近两步的箭头
+ */
+Board.prototype.showThinkingArrows = function() {
+  this.clearArrows();
+  var mvList = this.pos.mvList;
+  var len = mvList.length;
+  if (len < 2) return;
+  var start = Math.max(1, len - 2);
+  for (var i = start; i < len; i++) {
+    var mv = mvList[i];
+    if (mv <= 0) continue;
+    // 第 1、3、5……步为红方，第 2、4、6……步为黑方
+    this.drawArrow(mv, (i % 2 === 1) ? 'red' : 'black');
+  }
+};
