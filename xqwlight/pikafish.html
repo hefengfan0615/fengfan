@@ -744,16 +744,12 @@ function initEngine() {
   setLoadProgress(0, '正在下载引擎二进制...');
   var base = getAssetBaseXqw();
 
-  // 设置 SIMD 标志文本（纯文本形式附加在引擎版本同一行）
-  var simdFlagText = '';
-  if (USE_RELAXED) {
-    simdFlagText = ' (relaxed)';
-  } else {
-    simdFlagText = ' (non-relaxed)';
-  }
-  // 存入 data 属性供 engineVersion 更新时拼接
+  // 直接用已知常量设置引擎版本（不依赖引擎 UCI 的 id name 响应，
+  // 因为后续 searchUci 会 terminate 初始 Worker，可能导致 id name 消息丢失）
+  var simdFlagText = USE_RELAXED ? ' (relaxed)' : ' (non-relaxed)';
+  engineVersion = 'Pikafish ' + ENGINE_VERSION;
   var engineVerEl = document.getElementById('engineVersion');
-  engineVerEl.textContent = '';
+  engineVerEl.textContent = engineVersion + simdFlagText;
   engineVerEl.dataset.simdFlag = simdFlagText;
 
   fetch(base + 'wasm/' + ENGINE_PREFIX + '.wasm' + ENGINE_QUERY, { cache: "no-store" }).then(function(resp) {
