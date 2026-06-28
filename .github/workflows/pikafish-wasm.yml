@@ -42,7 +42,7 @@ jobs:
           chmod +x ../scripts/net.sh
           ../scripts/net.sh
 
-      - name: Build WASM
+      - name: Build WASM (non-relaxed fallback)
         run: |
           source $EMSDK_PATH/emsdk_env.sh
           # Build wasm WITHOUT NNUE embedded — NNUE loaded separately at runtime
@@ -57,6 +57,18 @@ jobs:
             }
           });
           EOF
+          # wasm32（非 relaxed）：面向老浏览器（Chrome <119 / Firefox <121 / Safari <17.4）
+          # 前端通过 WebAssembly.validate 检测 relaxed SIMD 支持情况自动选择加载哪个版本
+          make -j$(nproc) build \
+            ARCH=wasm32 \
+            CXX=em++ \
+            COMP=gcc \
+            EXTRALDFLAGS="--pre-js preload_nnue.js" \
+            EXE=pikafish.js
+
+      - name: Build WASM (relaxed-simd)
+        run: |
+          source $EMSDK_PATH/emsdk_env.sh
           # wasm32-relaxed-simd 仍为单线程 (WASM_SINGLE_THREAD) + 128-bit SIMD，
           # 仅放宽部分 SIMD 语义以允许更快的指令选择 (relaxed_laneselect/madd/dot_product 等)，
           # 同等时间可搜索更多节点 => 更快、更准；浏览器要求 Chrome 119+/Firefox 121+/Safari 17.4+
@@ -65,23 +77,29 @@ jobs:
             CXX=em++ \
             COMP=gcc \
             EXTRALDFLAGS="--pre-js preload_nnue.js" \
-            EXE=pikafish.js
+            EXE=pikafish.relaxed.js
 
       - name: Create wasm directory
         run: mkdir -p ../wasm
 
       - name: Copy artifacts to wasm folder
         run: |
-          cp pikafish.js ../wasm/
-          cp pikafish.wasm ../wasm/
-          cp pikafish.nnue ../wasm/
+          cp pikafish.js             ../wasm/
+          cp pikafish.wasm           ../wasm/
+          cp pikafish.relaxed.js     ../wasm/
+          cp pikafish.relaxed.wasm   ../wasm/
+          cp pikafish.nnue           ../wasm/
 
       - name: Online test engine search
         working-directory: wasm
         run: |
-          echo "=== Testing engine info ==="
+          echo "=== Testing relaxed-simd engine info ==="
+          node pikafish.relaxed.js compiler
+          echo "=== Running relaxed-simd bench search test ==="
+          node pikafish.relaxed.js bench 16 1 1
+          echo "=== Testing non-relaxed engine info ==="
           node pikafish.js compiler
-          echo "=== Running bench search test ==="
+          echo "=== Running non-relaxed bench search test ==="
           node pikafish.js bench 16 1 1
 
       - name: Sync engine version to frontend

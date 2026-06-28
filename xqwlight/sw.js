@@ -27,6 +27,11 @@ var ASSETS = [
   "./cchess.js",
   "./pikafish-engine.js",
   "./worker.js",
+  /* -- 引擎文件：分两个变体，前端按浏览器支持情况选择加载 --
+   *  pikafish.relaxed.{js,wasm}    => wasm32-relaxed-simd（更快；要求 Chrome 119+ / Firefox 121+ / Safari 17.4+）
+   *  pikafish.{js,wasm}            => wasm32（兼容老浏览器，作为回退） */
+  "./wasm/pikafish.relaxed.js" + ENGINE_QUERY,
+  "./wasm/pikafish.relaxed.wasm" + ENGINE_QUERY,
   "./wasm/pikafish.js" + ENGINE_QUERY,
   "./wasm/pikafish.wasm" + ENGINE_QUERY,
   "./wasm/pikafish.nnue",   // NNUE 固定 URL，引擎更新时不变，命中离线缓存
@@ -48,9 +53,11 @@ var ASSETS = [
   "./sounds/newgame.wav"
 ];
 
-/* 判断是否为引擎文件 */
+/* 判断是否为引擎文件（含 relaxed 与非 relaxed 两个变体） */
 function isEngineFile(urlPath) {
-  return urlPath.indexOf("/wasm/pikafish.js") >= 0 ||
+  return urlPath.indexOf("/wasm/pikafish.relaxed.js") >= 0 ||
+         urlPath.indexOf("/wasm/pikafish.relaxed.wasm") >= 0 ||
+         urlPath.indexOf("/wasm/pikafish.js") >= 0 ||
          urlPath.indexOf("/wasm/pikafish.wasm") >= 0 ||
          urlPath.indexOf("/wasm/pikafish.nnue") >= 0;
 }

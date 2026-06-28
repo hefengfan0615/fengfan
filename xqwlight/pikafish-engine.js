@@ -132,16 +132,27 @@ PikafishUciSearch.prototype.init = function(wasmBinary, engineJs, nnueData) {
 var ENGINE_VERSION = "20260628-015946";
 var ENGINE_QUERY = "?v=" + ENGINE_VERSION;
 
+/* relaxed SIMD 特性检测：与 pikafish.html 中同步，决定下载哪份引擎二进制。
+ * 模块字节来自 wasm-feature-detect 库（Google Chrome Labs）经实测可正确编译。 */
+var USE_RELAXED = (function() {
+  try {
+    if (typeof WebAssembly === 'undefined' || typeof WebAssembly.validate !== 'function') return false;
+    var bytes = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,15,1,13,0,65,1,253,15,65,2,253,15,253,128,2,11]);
+    return WebAssembly.validate(bytes);
+  } catch (e) { return false; }
+})();
+var ENGINE_PREFIX = USE_RELAXED ? 'pikafish.relaxed' : 'pikafish';
+
 PikafishUciSearch.prototype._downloadEngine = function() {
   var self = this;
   var base = getAssetBaseXqw();
 
-  return fetch(base + 'wasm/pikafish.wasm' + ENGINE_QUERY).then(function(resp) {
+  return fetch(base + 'wasm/' + ENGINE_PREFIX + '.wasm' + ENGINE_QUERY).then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
     return resp.arrayBuffer();
   }).then(function(ab) {
     self.wasmBinary = ab;
-    return fetch(base + 'wasm/pikafish.js' + ENGINE_QUERY);
+    return fetch(base + 'wasm/' + ENGINE_PREFIX + '.js' + ENGINE_QUERY);
   }).then(function(resp) {
     if (!resp.ok) throw new Error('JS 下载失败: HTTP ' + resp.status);
     return resp.text();
