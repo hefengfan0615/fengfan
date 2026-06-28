@@ -57,8 +57,11 @@ jobs:
             }
           });
           EOF
+          # wasm32-relaxed-simd 仍为单线程 (WASM_SINGLE_THREAD) + 128-bit SIMD，
+          # 仅放宽部分 SIMD 语义以允许更快的指令选择 (relaxed_laneselect/madd/dot_product 等)，
+          # 同等时间可搜索更多节点 => 更快、更准；浏览器要求 Chrome 119+/Firefox 121+/Safari 17.4+
           make -j$(nproc) build \
-            ARCH=wasm32 \
+            ARCH=wasm32-relaxed-simd \
             CXX=em++ \
             COMP=gcc \
             EXTRALDFLAGS="--pre-js preload_nnue.js" \
