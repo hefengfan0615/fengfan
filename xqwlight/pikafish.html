@@ -824,7 +824,28 @@ function initEngine() {
     }
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎就绪';
-    if (board.computerMove()) setTimeout(function() { board.response(); }, 300);
+    if (board.computerMove()) {
+      // 等待引擎版本信息（id name）被捕获后再开始搜索
+      // 原因：searchUci 会终止当前 worker 并创建新 worker，
+      //       新 worker 不会再输出 id name，若旧 worker 的 stdout
+      //       消息尚未被主线程处理则版本会永久丢失。
+      //       典型场景：在电脑思考时刷新页面，引擎很快被 searchUci 重建。
+      var startResponse = function() {
+        setTimeout(function() { board.response(); }, 200);
+      };
+      if (engineVersion) {
+        startResponse();
+      } else {
+        var verAttempts = 0;
+        var verCheckTimer = setInterval(function() {
+          verAttempts++;
+          if (engineVersion || verAttempts > 100) { // 最多等 5 秒
+            clearInterval(verCheckTimer);
+            startResponse();
+          }
+        }, 50);
+      }
+    }
   }).catch(function(err) {
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎加载失败：' + (err && err.message ? err.message : String(err));
