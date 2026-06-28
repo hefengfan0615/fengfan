@@ -1,0 +1,78 @@
+name: Update NNUE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-nnue:
+    name: Update NNUE network
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch NNUE release metadata
+        id: meta
+        run: |
+          # Query GitHub API for the latest release asset metadata
+          API_URL="https://api.github.com/repos/official-pikafish/Networks/releases/latest"
+          ASSET_NAME="pikafish.nnue"
+
+          echo "Fetching metadata for asset: ${ASSET_NAME}"
+          META_JSON=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+            "${API_URL}" | jq --arg name "${ASSET_NAME}" \
+            '.assets[] | select(.name == $name) | {name: .name, size: .size, updated_at: .updated_at, browser_download_url: .browser_download_url}')
+
+          if [ -z "${META_JSON}" ]; then
+            echo "::error::Could not find asset ${ASSET_NAME} in the latest release."
+            exit 1
+          fi
+
+          echo "${META_JSON}" | jq .
+
+          ASSET_URL=$(echo "${META_JSON}" | jq -r '.browser_download_url')
+          ASSET_SIZE=$(echo "${META_JSON}" | jq -r '.size')
+          ASSET_UPDATED=$(echo "${META_JSON}" | jq -r '.updated_at')
+
+          echo "asset_url=${ASSET_URL}" >> $GITHUB_OUTPUT
+          echo "asset_size=${ASSET_SIZE}" >> $GITHUB_OUTPUT
+          echo "asset_updated=${ASSET_UPDATED}" >> $GITHUB_OUTPUT
+
+      - name: Display latest version info
+        run: |
+          echo "=========================================="
+          echo "NNUE file:    pikafish.nnue"
+          echo "Updated at:   ${{ steps.meta.outputs.asset_updated }}"
+          echo "File size:    ${{ steps.meta.outputs.asset_size }} bytes (~$(( ${{ steps.meta.outputs.asset_size }} / 1024 / 1024 )) MB)"
+          echo "Source URL:   ${{ steps.meta.outputs.asset_url }}"
+          echo "=========================================="
+
+      - name: Download latest NNUE
+        run: |
+          mkdir -p xqwlight/wasm
+          curl -fsSL -o xqwlight/wasm/pikafish.nnue "${{ steps.meta.outputs.asset_url }}"
+          ls -lh xqwlight/wasm/pikafish.nnue
+
+      - name: Verify downloaded file
+        run: |
+          DOWNLOADED_SIZE=$(stat -c %s xqwlight/wasm/pikafish.nnue)
+          EXPECTED_SIZE=${{ steps.meta.outputs.asset_size }}
+          echo "Expected size: ${EXPECTED_SIZE} bytes"
+          echo "Downloaded size: ${DOWNLOADED_SIZE} bytes"
+          if [ "${DOWNLOADED_SIZE}" -ne "${EXPECTED_SIZE}" ]; then
+            echo "::error::Downloaded file size does not match the release asset size."
+            exit 1
+          fi
+          echo "Size verified successfully."
+
+      - name: Commit NNUE to main
+        run: |
+          git config user.name "Pikafish Bot"
+          git config user.email "pikafish-bot@github.com"
+          # Force-add the nnue file (gitignored via **/*.nnue) and wasm folder
+          git add -f xqwlight/wasm/pikafish.nnue
+          git status
+          git commit -m "Update NNUE network [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:main
