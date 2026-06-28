@@ -47,14 +47,26 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
     Value nnue = psqt + positional;
+    int   nnueComplexity = std::abs(psqt - positional);
 
-    // Blend optimism and eval with nnue complexity
-    int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 465;
-    nnue -= nnue * nnueComplexity / 11743;
+    // --- Nonlinear score mapping ---
+    // 1. Subtract baseline to push equal positions near 0
+    nnue -= 45;
+    nnue  = std::max(0, nnue);
+
+    // 2. Piecewise linear boost: only amplify when clearly winning
+    //    (complexity > 200 means the position is decisively not equal)
+    if (nnueComplexity > 200)
+        nnue += (nnueComplexity - 200) * 6;
+
+    // 3. Greatly reduce complexity damping (was damping winning too much)
+    nnue -= nnue * nnueComplexity / 50000;
+
+    // 4. Reduce optimism to keep equal positions flat
+    optimism = optimism / 5;
 
     int material = pos.major_material();
-    int v        = (nnue * (17380 + material) + optimism * (3061 + material)) / 20582;
+    int v        = (nnue * (18000 + material) + optimism * (1000 + material)) / 19000;
 
     // Damp down the evaluation linearly when shuffling
     v -= (v * pos.rule60_count()) / 253;
