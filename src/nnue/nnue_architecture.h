@@ -129,9 +129,9 @@ struct NetworkArchitecture {
         // first layer and last layer use WeightScaleBits + 1
         i32 fwdOut = buffer.fc_2_out[0] + buffer.fc_0_out[FC_0_OUTPUTS];
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
-        // quantized form, but we want 1.0 to be equal to 2400*OutputScale
+        // quantized form, but we want 1.0 to be equal to 600*OutputScale
         // to make overflow impossible we cast to i64
-        constexpr i64 multiplier = 2400 * OutputScale;
+        constexpr i64 multiplier = 600 * OutputScale;
         constexpr i64 denominator =
           static_cast<i64>(HiddenOneVal) * static_cast<i64>(1U << WeightScaleBits) * 2;
 
