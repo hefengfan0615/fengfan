@@ -110,23 +110,6 @@ body {
 .engine-panel .eng-version {
   color: #9cb3ff; font-size: 12px; margin-bottom: 2px;
 }
-.engine-panel .eng-version .simd-badge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 7px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  vertical-align: 1px;
-  font-family: inherit;
-}
-.engine-panel .eng-version .simd-badge.relaxed {
-  background: #4f7cff; color: #fff;
-}
-.engine-panel .eng-version .simd-badge.fallback {
-  background: #6b7280; color: #fff;
-}
 .engine-panel .eng-line {
   color: #7ee2a8; letter-spacing: 0.3px;
 }
@@ -283,7 +266,7 @@ body {
         <div class="bottom-left">
           <div class="engine-panel">
             <div class="eng-version">
-              <span id="engineVersion"></span><span id="simdBadge"></span>
+              <span id="engineVersion"></span>
             </div>
             <div class="eng-line" id="infoLine">等待引擎...</div>
             <span class="eng-pv" id="pvMoves"></span>
@@ -605,7 +588,8 @@ function restart_click() {
   selMoveList.selectedIndex = 0;
   board.restart(STARTUP_FEN[0]);
   uciStatusEl.textContent = '引擎就绪';
-  document.getElementById('engineVersion').textContent = engineVersion;
+  var evEl = document.getElementById('engineVersion');
+  evEl.textContent = engineVersion + (evEl.dataset.simdFlag || '');
   // 重新开始后如果轮到电脑走棋则触发
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
 }
@@ -760,17 +744,17 @@ function initEngine() {
   setLoadProgress(0, '正在下载引擎二进制...');
   var base = getAssetBaseXqw();
 
-  // 设置 SIMD 徽标（页面加载即可见，不依赖引擎启动）
-  var simdBadgeEl = document.getElementById('simdBadge');
+  // 设置 SIMD 标志文本（纯文本形式附加在引擎版本同一行）
+  var simdFlagText = '';
   if (USE_RELAXED) {
-    simdBadgeEl.textContent = 'relaxed';
-    simdBadgeEl.className = 'simd-badge relaxed';
-    simdBadgeEl.title = '当前使用 wasm32-relaxed-simd 引擎二进制（更快，要求 Chrome 119+ / Firefox 121+ / Safari 17.4+）';
+    simdFlagText = ' (relaxed)';
   } else {
-    simdBadgeEl.textContent = '非relaxed';
-    simdBadgeEl.className = 'simd-badge fallback';
-    simdBadgeEl.title = '当前浏览器不支持 relaxed SIMD，已回退到 wasm32 引擎二进制';
+    simdFlagText = ' (non-relaxed)';
   }
+  // 存入 data 属性供 engineVersion 更新时拼接
+  var engineVerEl = document.getElementById('engineVersion');
+  engineVerEl.textContent = '';
+  engineVerEl.dataset.simdFlag = simdFlagText;
 
   fetch(base + 'wasm/' + ENGINE_PREFIX + '.wasm' + ENGINE_QUERY, { cache: "no-store" }).then(function(resp) {
     if (!resp.ok) throw new Error('WASM 下载失败: HTTP ' + resp.status);
@@ -816,7 +800,8 @@ function initEngine() {
       // 捕获引擎版本
       if (text.indexOf('id name ') === 0) {
         engineVersion = text.substring(8);
-        document.getElementById('engineVersion').textContent = engineVersion;
+        var el = document.getElementById('engineVersion');
+        el.textContent = engineVersion + (el.dataset.simdFlag || '');
       }
     };
     pikafishSearch.onUciStderr = function(text) { console.warn('[pikafish] ' + text); };
