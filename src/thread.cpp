@@ -54,16 +54,6 @@ Thread::Thread(Search::SharedState&                    sharedState,
     idxInNuma(numaN),
     totalNuma(totalNumaCount),
     nthreads(sharedState.options["Threads"]),
-#ifdef WASM_SINGLE_THREAD
-    stdThread(nullptr) {
-    // In single-threaded WASM build, all work happens inline on the
-    // main thread. No background thread is spawned.
-    (void)binder;  // binder is a no-op in single-threaded mode
-    numaAccessToken = NumaReplicatedAccessToken(numaN);
-    worker          = make_unique_large_page<Search::Worker>(
-      sharedState, std::move(sm), n, idxInNuma, totalNuma, numaAccessToken);
-}
-#else
     stdThread(&Thread::idle_loop, this) {
 
     wait_for_search_finished();
@@ -79,61 +69,40 @@ Thread::Thread(Search::SharedState&                    sharedState,
 
     wait_for_search_finished();
 }
-#endif
+
 
 // Destructor wakes up the thread in idle_loop() and waits
 // for its termination. Thread should be already waiting.
 Thread::~Thread() {
 
-#ifdef WASM_SINGLE_THREAD
-    // No background thread; worker is cleaned up by unique_ptr
-    (void)exit;  // suppress unused warning if exit is never written
-#else
     assert(!searching);
 
     exit = true;
     start_searching();
     stdThread.join();
-#endif
 }
 
 // Wakes up the thread that will start the search
 void Thread::start_searching() {
     assert(worker != nullptr);
-#ifdef WASM_SINGLE_THREAD
-    worker->start_searching();
-#else
     run_custom_job([this]() { worker->start_searching(); });
-#endif
 }
 
 // Clears the histories for the thread worker (usually before a new game)
 void Thread::clear_worker() {
     assert(worker != nullptr);
-#ifdef WASM_SINGLE_THREAD
-    worker->clear();
-#else
     run_custom_job([this]() { worker->clear(); });
-#endif
 }
 
 // Blocks on the condition variable until the thread has finished searching
 void Thread::wait_for_search_finished() {
 
-#ifdef WASM_SINGLE_THREAD
-    // Work happens synchronously; nothing to wait for
-#else
     std::unique_lock<std::mutex> lk(mutex);
     cv.wait(lk, [&] { return !searching; });
-#endif
 }
 
 // Launching a function in the thread
 void Thread::run_custom_job(std::function<void()> f) {
-#ifdef WASM_SINGLE_THREAD
-    // Execute inline on the main thread
-    f();
-#else
     {
         std::unique_lock<std::mutex> lk(mutex);
         cv.wait(lk, [&] { return !searching; });
@@ -141,7 +110,6 @@ void Thread::run_custom_job(std::function<void()> f) {
         searching = true;
     }
     cv.notify_one();
-#endif
 }
 
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
@@ -150,12 +118,6 @@ void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); 
 // when the thread has no work to do.
 
 void Thread::idle_loop() {
-#ifdef WASM_SINGLE_THREAD
-    // idle_loop is never called in single-threaded WASM build
-    (void)exit;
-    (void)searching;
-    (void)jobFunc;
-#else
     while (true)
     {
         std::unique_lock<std::mutex> lk(mutex);
@@ -174,7 +136,6 @@ void Thread::idle_loop() {
         if (job)
             job();
     }
-#endif
 }
 
 Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
@@ -199,10 +160,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
         boundThreadToNumaNode.clear();
     }
 
-    usize       requested = sharedState.options["Threads"];
-#ifdef WASM_SINGLE_THREAD
-    requested = 1;  // Force single-threaded mode for WASM builds
-#endif
+    const usize requested = sharedState.options["Threads"];
 
     if (requested > 0)  // create new thread(s)
     {
@@ -383,22 +341,17 @@ void ThreadPool::start_thinking(Position& pos, StateListPtr& states, Search::Lim
 Thread* ThreadPool::get_best_thread() const {
 
     Thread* bestThread = threads.front().get();
-    Value   minScore   = VALUE_NONE;
+    Value   minScore   = VALUE_INFINITE;
 
     std::unordered_map<Move, i64, Move::MoveHash> votes(
       2 * std::min(size(), bestThread->worker->rootMoves.size()));
 
-    // Find the minimum score of all threads
     for (auto&& th : threads)
         minScore = std::min(minScore, th->worker->rootMoves[0].score);
 
-    // Vote according to score and depth, and select the best thread
-    auto thread_voting_value = [minScore](Thread* th) {
-        return (th->worker->rootMoves[0].score - minScore + 14) * int(th->worker->rootDepth);
-    };
-
+    // Vote according to score, and select the best thread
     for (auto&& th : threads)
-        votes[th->worker->rootMoves[0].pv[0]] += thread_voting_value(th.get());
+        votes[th->worker->rootMoves[0].pv[0]] += th->worker->rootMoves[0].score - minScore + 14;
 
     for (auto&& th : threads)
     {
@@ -416,11 +369,6 @@ Thread* ThreadPool::get_best_thread() const {
                                      && is_decisive(newThreadMove.score)
                                      && !newThreadMove.score_is_bound();
 
-        // We make sure not to pick a thread with a truncated principal variation.
-        const bool betterVotingValue =
-          thread_voting_value(th.get()) * int(newThreadMove.pv.size() > 2)
-          > thread_voting_value(bestThread) * int(bestThreadMove.pv.size() > 2);
-
         if (bestThreadDecisive)
         {
             // Make sure we pick the shortest mate / TB conversion.
@@ -435,7 +383,8 @@ Thread* ThreadPool::get_best_thread() const {
         else if (newThreadDecisive
                  || (!is_loss(newThreadMove.score)
                      && (newThreadMoveVote > bestThreadMoveVote
-                         || (newThreadMoveVote == bestThreadMoveVote && betterVotingValue))))
+                         || (newThreadMoveVote == bestThreadMoveVote
+                             && newThreadMove.pv.size() > bestThreadMove.pv.size()))))
             bestThread = th.get();
     }
 
