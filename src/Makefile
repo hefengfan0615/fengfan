@@ -874,8 +874,9 @@ endif
 ifeq ($(arch),wasm32)
 	# 单线程 WASM：避开 SharedArrayBuffer + COOP/COEP 依赖，
 	# 浏览器中可直接加载（thread_win32_osx.h 中 NativeThread 在 WASM_SINGLE_THREAD 下为 no-op）。
+	# emscripten 中只要不传 -pthread 就默认走单线程，因此这里只关线程宏、不再加反向开关。
 	CXXFLAGS += -msimd128 -DUSE_POPCNT -DWASM_SINGLE_THREAD
-	LDFLAGS += -sWASM_PTHREADS=0 -sINITIAL_MEMORY=64MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=3MB
+	LDFLAGS += -sINITIAL_MEMORY=64MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=3MB
 	ifeq ($(relaxedsimd),yes)
 		CXXFLAGS += -mrelaxed-simd
 	endif
