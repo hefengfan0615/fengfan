@@ -97,12 +97,23 @@ class Thread {
     std::function<void()>        jobFunc;
 
    private:
+#if defined(WASM_SINGLE_THREAD)
+    // In single-threaded mode there is no real worker thread, so the
+    // synchronization primitives (mutex, cv) are unused. We still keep the
+    // fields to minimize conditional code elsewhere, but they are not
+    // accessed.
+    usize idx, idxInNuma, totalNuma, nthreads;
+    bool  exit = false, searching = false;  // Searching is always false in single-threaded mode
+    NativeThread stdThread;  // no-op
+    NumaReplicatedAccessToken numaAccessToken;
+#else
     std::mutex                mutex;
     std::condition_variable   cv;
     usize                     idx, idxInNuma, totalNuma, nthreads;
     bool                      exit = false, searching = true;  // Set before starting std::thread
     NativeThread              stdThread;
     NumaReplicatedAccessToken numaAccessToken;
+#endif
 };
 
 

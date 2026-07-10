@@ -54,6 +54,16 @@ Thread::Thread(Search::SharedState&                    sharedState,
     idxInNuma(numaN),
     totalNuma(totalNumaCount),
     nthreads(sharedState.options["Threads"]),
+#if defined(WASM_SINGLE_THREAD)
+    stdThread([]() {})  // NativeThread is a no-op in single-threaded mode
+{
+    // In single-threaded mode there is no real worker thread, so we
+    // perform the worker allocation inline on the calling thread.
+    this->numaAccessToken = binder();
+    this->worker          = make_unique_large_page<Search::Worker>(
+      sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
+}
+#else
     stdThread(&Thread::idle_loop, this) {
 
     wait_for_search_finished();
@@ -69,40 +79,63 @@ Thread::Thread(Search::SharedState&                    sharedState,
 
     wait_for_search_finished();
 }
+#endif
 
 
 // Destructor wakes up the thread in idle_loop() and waits
 // for its termination. Thread should be already waiting.
 Thread::~Thread() {
-
+#if !defined(WASM_SINGLE_THREAD)
     assert(!searching);
 
     exit = true;
     start_searching();
     stdThread.join();
+#else
+    // In single-threaded mode the worker is allocated and used inline on the
+    // main thread, so there is nothing to join or signal here.
+#endif
 }
 
 // Wakes up the thread that will start the search
 void Thread::start_searching() {
     assert(worker != nullptr);
+#if defined(WASM_SINGLE_THREAD)
+    // In single-threaded mode, run the search directly on the calling thread.
+    worker->start_searching();
+#else
     run_custom_job([this]() { worker->start_searching(); });
+#endif
 }
 
 // Clears the histories for the thread worker (usually before a new game)
 void Thread::clear_worker() {
     assert(worker != nullptr);
+#if defined(WASM_SINGLE_THREAD)
+    worker->clear();
+#else
     run_custom_job([this]() { worker->clear(); });
+#endif
 }
 
 // Blocks on the condition variable until the thread has finished searching
 void Thread::wait_for_search_finished() {
-
+#if !defined(WASM_SINGLE_THREAD)
     std::unique_lock<std::mutex> lk(mutex);
     cv.wait(lk, [&] { return !searching; });
+#endif
+    // In single-threaded mode the work is already finished by the time
+    // run_custom_job returns, so this is a no-op.
 }
 
 // Launching a function in the thread
 void Thread::run_custom_job(std::function<void()> f) {
+#if defined(WASM_SINGLE_THREAD)
+    // In single-threaded mode, execute the job synchronously on the calling
+    // thread. This preserves the semantics expected by ThreadPool while
+    // removing the need for any synchronization primitives.
+    f();
+#else
     {
         std::unique_lock<std::mutex> lk(mutex);
         cv.wait(lk, [&] { return !searching; });
@@ -110,6 +143,7 @@ void Thread::run_custom_job(std::function<void()> f) {
         searching = true;
     }
     cv.notify_one();
+#endif
 }
 
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
@@ -118,6 +152,7 @@ void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); 
 // when the thread has no work to do.
 
 void Thread::idle_loop() {
+#if !defined(WASM_SINGLE_THREAD)
     while (true)
     {
         std::unique_lock<std::mutex> lk(mutex);
@@ -136,6 +171,7 @@ void Thread::idle_loop() {
         if (job)
             job();
     }
+#endif
 }
 
 Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
@@ -160,7 +196,14 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
         boundThreadToNumaNode.clear();
     }
 
+#if defined(WASM_SINGLE_THREAD)
+    // In single-threaded mode we always run with exactly one thread, regardless
+    // of the value of the "Threads" UCI option, so the engine is portable to
+    // WASM (which does not allow background threads without SharedArrayBuffer).
+    const usize requested = 1;
+#else
     const usize requested = sharedState.options["Threads"];
+#endif
 
     if (requested > 0)  // create new thread(s)
     {
@@ -171,6 +214,12 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
         // change the NumaConfig UCI setting) is to not bind the threads to processors
         // unless we know for sure that we span NUMA nodes and replication is required.
         const std::string numaPolicy(sharedState.options["NumaPolicy"]);
+#if defined(WASM_SINGLE_THREAD)
+        // In single-threaded mode there are no worker threads to bind, so skip
+        // NUMA binding entirely. This also avoids the std::thread dependency
+        // inside NumaConfig::execute_on_numa_node which would not link in WASM.
+        const bool        doBindThreads = false;
+#else
         const bool        doBindThreads = [&]() {
             if (numaPolicy == "none")
                 return false;
@@ -181,6 +230,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             // numaPolicy == "system", or explicitly set by the user
             return true;
         }();
+#endif
 
         std::map<NumaIndex, usize> counts;
         boundThreadToNumaNode = doBindThreads
