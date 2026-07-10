@@ -872,8 +872,10 @@ ifeq ($(lsx),yes)
 endif
 
 ifeq ($(arch),wasm32)
-	CXXFLAGS += -pthread -msimd128 -DUSE_POPCNT -DUSE_SLOPPY_ATOMICS
-	LDFLAGS += -pthread -sINITIAL_MEMORY=64MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=3MB
+	# 单线程 WASM：避开 SharedArrayBuffer + COOP/COEP 依赖，
+	# 浏览器中可直接加载（thread_win32_osx.h 中 NativeThread 在 WASM_SINGLE_THREAD 下为 no-op）。
+	CXXFLAGS += -msimd128 -DUSE_POPCNT -DWASM_SINGLE_THREAD
+	LDFLAGS += -sWASM_PTHREADS=0 -sINITIAL_MEMORY=64MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=3MB
 	ifeq ($(relaxedsimd),yes)
 		CXXFLAGS += -mrelaxed-simd
 	endif
