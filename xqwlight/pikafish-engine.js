@@ -270,9 +270,17 @@ PikafishUciSearch.prototype.startEngine = function() {
 
 /* 执行 UCI 搜索，返回 bestmove 对应的 xqwlight move。
  * 使用常驻 Worker：不终止旧 Worker，直接发送新搜索命令。
- * 如果前一个搜索仍在运行，其 Promise 会被 reject。 */
+ * 如果前一个搜索仍在运行，其 Promise 会被 reject。
+ * 如果 Worker 不存在（被 restart 终止），自动重建。 */
 PikafishUciSearch.prototype.searchUci = function(fen, movesList, movetimeMs, hasStartFen) {
   var self = this;
+
+  // 如果 Worker 被终止（如点击重新开始），自动重建
+  if (!self.worker || !self.engineReady) {
+    return self.startEngine().then(function() {
+      return self.searchUci(fen, movesList, movetimeMs, hasStartFen);
+    });
+  }
 
   // 1) 作废上一次未结束的搜索 Promise
   if (self._pendingSearch) {

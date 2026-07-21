@@ -586,6 +586,26 @@ function restart_click() {
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
   selMoveList.options.length = 1;
   selMoveList.selectedIndex = 0;
+
+  // 引擎思考中点击重新开始：强制终止当前搜索，重建 Worker
+  if (board.busy) {
+    board.busy = false;
+    board.thinking.style.visibility = "hidden";
+    if (pikafishSearch) {
+      if (pikafishSearch._pendingSearch) {
+        var ps = pikafishSearch._pendingSearch;
+        pikafishSearch._pendingSearch = null;
+        if (ps.timeoutId) clearTimeout(ps.timeoutId);
+        try { ps.reject(new Error('__superseded__')); } catch (e) {}
+      }
+      if (pikafishSearch.worker) {
+        try { pikafishSearch.worker.terminate(); } catch(e) {}
+        pikafishSearch.worker = null;
+      }
+      pikafishSearch.engineReady = false;
+    }
+  }
+
   board.restart(STARTUP_FEN[0]);
   uciStatusEl.textContent = '引擎就绪';
   var evEl = document.getElementById('engineVersion');
