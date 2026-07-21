@@ -31,11 +31,11 @@ namespace Stockfish::Benchmark {
 // Utility to verify move generation. All the leaf nodes up
 // to the given depth are generated and counted, and the sum is returned.
 template<bool Root>
-u64 perft(Position& pos, Depth depth) {
+uint64_t perft(Position& pos, Depth depth) {
 
     StateInfo st;
 
-    u64        cnt, nodes = 0;
+    uint64_t   cnt, nodes = 0;
     const bool leaf = (depth == 2);
 
     for (const auto& m : MoveList<LEGAL>(pos))
@@ -55,7 +55,7 @@ u64 perft(Position& pos, Depth depth) {
     return nodes;
 }
 
-inline u64 perft(const std::string& fen, Depth depth) {
+inline uint64_t perft(const std::string& fen, Depth depth) {
     StateInfo st;
     Position  p;
     p.set(fen, &st);

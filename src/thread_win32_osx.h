@@ -27,23 +27,7 @@
 // The implementation calls pthread_create() with the stack size parameter
 // equal to the Linux 8MB default, on platforms that support it.
 
-#if defined(WASM_SINGLE_THREAD)
-
-// WASM single-threaded build: NativeThread is a no-op because all work
-// happens inline on the main thread. This avoids any pthread_create /
-// std::thread dependency which requires SharedArrayBuffer + COOP/COEP.
-namespace Stockfish {
-
-class NativeThread {
-   public:
-    template<class Function, class... Args>
-    explicit NativeThread(Function&& /*fun*/, Args&&... /*args*/) {}
-    void join() {}
-};
-
-}  // namespace Stockfish
-
-#elif defined(__APPLE__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(USE_PTHREADS)
+#if defined(__APPLE__) || defined(__MINGW32__) || defined(__MINGW64__) || defined(USE_PTHREADS)
 
     #include <pthread.h>
     #include <functional>
@@ -53,7 +37,7 @@ namespace Stockfish {
 class NativeThread {
     pthread_t thread;
 
-    static constexpr usize TH_STACK_SIZE = 8 * 1024 * 1024;
+    static constexpr size_t TH_STACK_SIZE = 8 * 1024 * 1024;
 
    public:
     template<class Function, class... Args>

@@ -19,10 +19,6 @@
 #ifndef SHM_LINUX_H_INCLUDED
 #define SHM_LINUX_H_INCLUDED
 
-#if !defined(__linux__) || defined(__ANDROID__)
-    #error shm_linux.h should not be included on this platform.
-#endif
-
 #include <atomic>
 #include <cassert>
 #include <cerrno>
@@ -37,6 +33,7 @@
 #include <string>
 #include <inttypes.h>
 #include <type_traits>
+#include <unordered_set>
 
 #include <fcntl.h>
 #include <signal.h>
@@ -44,81 +41,74 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <limits.h>
-#define SF_MAX_SEM_NAME_LEN NAME_MAX
 
-#include "misc.h"
+#if defined(__NetBSD__) || defined(__DragonFly__) || defined(__linux__)
+    #include <limits.h>
+    #define SF_MAX_SEM_NAME_LEN NAME_MAX
+#elif defined(__APPLE__)
+    #define SF_MAX_SEM_NAME_LEN 31
+#else
+    #define SF_MAX_SEM_NAME_LEN 255
+#endif
+
 
 namespace Stockfish::shm {
 
 namespace detail {
 
 struct ShmHeader {
-    static constexpr u32 SHM_MAGIC = 0xAD5F1A12;
-    pthread_mutex_t      mutex;
-    std::atomic<u32>     ref_count{0};
-    std::atomic<bool>    initialized{false};
-    u32                  magic = SHM_MAGIC;
+    static constexpr uint32_t SHM_MAGIC = 0xAD5F1A12;
+    pthread_mutex_t           mutex;
+    std::atomic<uint32_t>     ref_count{0};
+    std::atomic<bool>         initialized{false};
+    uint32_t                  magic = SHM_MAGIC;
 };
 
 class SharedMemoryBase {
    public:
-    virtual ~SharedMemoryBase()                                        = default;
-    virtual void               close(bool skip_unmap = false) noexcept = 0;
-    virtual const std::string& name() const noexcept                   = 0;
+    virtual ~SharedMemoryBase()                      = default;
+    virtual void               close() noexcept      = 0;
+    virtual const std::string& name() const noexcept = 0;
 };
 
 class SharedMemoryRegistry {
    private:
-    static std::mutex                     registry_mutex_;
-    static std::vector<SharedMemoryBase*> active_instances_;
+    static std::mutex                            registry_mutex_;
+    static std::unordered_set<SharedMemoryBase*> active_instances_;
 
    public:
     static void register_instance(SharedMemoryBase* instance) {
         std::scoped_lock lock(registry_mutex_);
-        active_instances_.push_back(instance);
+        active_instances_.insert(instance);
     }
 
     static void unregister_instance(SharedMemoryBase* instance) {
         std::scoped_lock lock(registry_mutex_);
-        active_instances_.erase(
-          std::remove(active_instances_.begin(), active_instances_.end(), instance),
-          active_instances_.end());
+        active_instances_.erase(instance);
     }
 
-    static void cleanup_all(bool skip_unmap = false) noexcept {
+    static void cleanup_all() noexcept {
         std::scoped_lock lock(registry_mutex_);
         for (auto* instance : active_instances_)
-            instance->close(skip_unmap);
+            instance->close();
         active_instances_.clear();
     }
 };
 
-inline std::mutex                     SharedMemoryRegistry::registry_mutex_;
-inline std::vector<SharedMemoryBase*> SharedMemoryRegistry::active_instances_;
+inline std::mutex                            SharedMemoryRegistry::registry_mutex_;
+inline std::unordered_set<SharedMemoryBase*> SharedMemoryRegistry::active_instances_;
 
 class CleanupHooks {
    private:
     static std::once_flag register_once_;
 
     static void handle_signal(int sig) noexcept {
-        // Search threads may still be running, so skip munmap (but still perform
-        // other cleanup actions). The memory mappings will be released on exit.
-        SharedMemoryRegistry::cleanup_all(true);
-
-        // Invoke the default handler, which will exit
-        struct sigaction sa;
-        sa.sa_handler = SIG_DFL;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        if (sigaction(sig, &sa, nullptr) == -1)
-            _Exit(128 + sig);
-
-        raise(sig);
+        SharedMemoryRegistry::cleanup_all();
+        _Exit(128 + sig);
     }
 
     static void register_signal_handlers() noexcept {
-        std::atexit([]() { SharedMemoryRegistry::cleanup_all(true); });
+        std::atexit([]() { SharedMemoryRegistry::cleanup_all(); });
 
         constexpr int signals[] = {SIGHUP,  SIGINT,  SIGQUIT, SIGILL, SIGABRT, SIGFPE,
                                    SIGSEGV, SIGTERM, SIGBUS,  SIGSYS, SIGXCPU, SIGXFSZ};
@@ -141,6 +131,23 @@ class CleanupHooks {
 inline std::once_flag CleanupHooks::register_once_;
 
 
+inline int portable_fallocate(int fd, off_t offset, off_t length) {
+#ifdef __APPLE__
+    fstore_t store = {F_ALLOCATECONTIG, F_PEOFPOSMODE, offset, length, 0};
+    int      ret   = fcntl(fd, F_PREALLOCATE, &store);
+    if (ret == -1)
+    {
+        store.fst_flags = F_ALLOCATEALL;
+        ret             = fcntl(fd, F_PREALLOCATE, &store);
+    }
+    if (ret != -1)
+        ret = ftruncate(fd, offset + length);
+    return ret;
+#else
+    return posix_fallocate(fd, offset, length);
+#endif
+}
+
 }  // namespace detail
 
 template<typename T>
@@ -154,19 +161,18 @@ class SharedMemory: public detail::SharedMemoryBase {
     void*              mapped_ptr_ = nullptr;
     T*                 data_ptr_   = nullptr;
     detail::ShmHeader* header_ptr_ = nullptr;
-    usize              total_size_ = 0;
+    size_t             total_size_ = 0;
     std::string        sentinel_base_;
     std::string        sentinel_path_;
 
-    static constexpr usize calculate_total_size() noexcept {
+    static constexpr size_t calculate_total_size() noexcept {
         return sizeof(T) + sizeof(detail::ShmHeader);
     }
 
     static std::string make_sentinel_base(const std::string& name) {
-        char buf[32];
-        // Using std::to_string here causes non-deterministic PGO builds.
-        // snprintf, being part of libc, is insensitive to the formatted values.
-        std::snprintf(buf, sizeof(buf), "sfshm_%016" PRIu64, hash_string(name));
+        uint64_t hash = std::hash<std::string>{}(name);
+        char     buf[32];
+        std::snprintf(buf, sizeof(buf), "sfshm_%016" PRIx64, static_cast<uint64_t>(hash));
         return buf;
     }
 
@@ -312,7 +318,7 @@ class SharedMemory: public detail::SharedMemoryBase {
         }
     }
 
-    void close(bool skip_unmap = false) noexcept override {
+    void close() noexcept override {
         if (fd_ == -1 && mapped_ptr_ == nullptr)
             return;
 
@@ -339,10 +345,7 @@ class SharedMemory: public detail::SharedMemoryBase {
             decrement_refcount_relaxed();
         }
 
-        if (skip_unmap)
-            mapped_ptr_ = nullptr;
-        else
-            unmap_region();
+        unmap_region();
 
         if (remove_region)
             shm_unlink(name_.c_str());
@@ -356,8 +359,7 @@ class SharedMemory: public detail::SharedMemoryBase {
             fd_ = -1;
         }
 
-        if (!skip_unmap)
-            reset();
+        reset();
     }
 
     const std::string& name() const noexcept override { return name_; }
@@ -370,7 +372,7 @@ class SharedMemory: public detail::SharedMemoryBase {
 
     [[nodiscard]] const T& operator*() const noexcept { return *data_ptr_; }
 
-    [[nodiscard]] u32 ref_count() const noexcept {
+    [[nodiscard]] uint32_t ref_count() const noexcept {
         return header_ptr_ ? header_ptr_->ref_count.load(std::memory_order_acquire) : 0;
     }
 
@@ -425,17 +427,18 @@ class SharedMemory: public detail::SharedMemoryBase {
     }
 
     std::string sentinel_full_path(pid_t pid) const {
-        char buf[1024];
-        // See above snprintf comment
-        std::snprintf(buf, sizeof(buf), "/dev/shm/%s.%ld", sentinel_base_.c_str(), long(pid));
-        return buf;
+        std::string path = "/dev/shm/";
+        path += sentinel_base_;
+        path.push_back('.');
+        path += std::to_string(pid);
+        return path;
     }
 
     void decrement_refcount_relaxed() noexcept {
         if (!header_ptr_)
             return;
 
-        u32 expected = header_ptr_->ref_count.load(std::memory_order_relaxed);
+        uint32_t expected = header_ptr_->ref_count.load(std::memory_order_relaxed);
         while (expected != 0
                && !header_ptr_->ref_count.compare_exchange_weak(
                  expected, expected - 1, std::memory_order_acq_rel, std::memory_order_relaxed))
@@ -582,31 +585,12 @@ class SharedMemory: public detail::SharedMemoryBase {
         if (ftruncate(fd_, static_cast<off_t>(total_size_)) == -1)
             return false;
 
+        if (detail::portable_fallocate(fd_, 0, static_cast<off_t>(total_size_)) != 0)
+            return false;
+
         mapped_ptr_ = mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
         if (mapped_ptr_ == MAP_FAILED)
         {
-            mapped_ptr_ = nullptr;
-            return false;
-        }
-
-#ifdef MADV_POPULATE_WRITE
-        // Pre-populate, attempting first with THP, to guarantee that the memory
-        // is allocated and avoid crashing on the first write.
-        madvise(mapped_ptr_, total_size_, MADV_HUGEPAGE);
-
-        const bool populated = madvise(mapped_ptr_, total_size_, MADV_POPULATE_WRITE) == 0;
-#else
-        const bool populated = false;
-#endif
-        // If the THP population failed, try with fallocate
-        if (!populated && posix_fallocate(fd_, 0, static_cast<off_t>(total_size_)) != 0)
-        {
-            // Release any partially populated pages by a failed MADV_POPULATE_WRITE.
-            // TODO: Not robust. Need to avoid residual pages if the process
-            // is terminated between the failed madvise and the ftruncate.
-            int err = ftruncate(fd_, 0);
-            (void) err;
-            munmap(mapped_ptr_, total_size_);
             mapped_ptr_ = nullptr;
             return false;
         }
@@ -631,7 +615,7 @@ class SharedMemory: public detail::SharedMemoryBase {
 
         struct stat st;
         fstat(fd_, &st);
-        if (static_cast<usize>(st.st_size) < total_size_)
+        if (static_cast<size_t>(st.st_size) < total_size_)
         {
             invalid_header = true;
             return false;
@@ -643,10 +627,6 @@ class SharedMemory: public detail::SharedMemoryBase {
             mapped_ptr_ = nullptr;
             return false;
         }
-
-#ifdef MADV_HUGEPAGE
-        madvise(mapped_ptr_, total_size_, MADV_HUGEPAGE);
-#endif
 
         data_ptr_   = static_cast<T*>(mapped_ptr_);
         header_ptr_ = std::launder(

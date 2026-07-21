@@ -1,26 +1,62 @@
 #!/bin/sh
 
+wget_or_curl=$( (command -v wget > /dev/null 2>&1 && echo "wget -qO-") || \
+                (command -v curl > /dev/null 2>&1 && echo "curl -skL"))
+
 fetch_network() {
   _filename="pikafish.nnue"
-  _repo_cache="../xqwlight/wasm/$_filename"
 
-  # 1. 从仓库获取 NNUE 权重（由手动管理，不自动下载）
-  if [ -f "$_repo_cache" ]; then
-    echo "Found $_filename in repo, reusing"
-    cp "$_repo_cache" "$_filename"
-    return
-  fi
-
-  # 2. 本地已有则跳过
   if [ -f "$_filename" ]; then
-    echo "Exists $_filename, skipping"
+    echo "Exists $_filename, skipping download"
     return
   fi
 
-  # 3. 仓库和本地都没有 → 报错退出
-  >&2 printf "%s\n" "ERROR: $_filename not found in repo or locally." \
-    "Please place the NNUE weights file at xqwlight/wasm/$_filename"
-  exit 1
+  if [ -z "$wget_or_curl" ]; then
+    >&2 printf "%s\n" "Neither wget or curl is installed." \
+          "Install one of these tools to download NNUE files automatically."
+    exit 1
+  fi
+
+  _archive_url="https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z"
+  _archive_file="Pikafish.2026-01-02.7z"
+
+  echo "Downloading $_filename from $_archive_url ..."
+  if $wget_or_curl "$_archive_url" > "$_archive_file" && [ -s "$_archive_file" ]; then
+    echo "Successfully downloaded archive"
+  else
+    echo "Failed to download archive from $_archive_url"
+    return 1
+  fi
+
+  # Extract pikafish.nnue from the 7z archive
+  if command -v 7z > /dev/null 2>&1; then
+    7z e "$_archive_file" "$_filename" -y > /dev/null 2>&1
+  elif command -v 7za > /dev/null 2>&1; then
+    7za e "$_archive_file" "$_filename" -y > /dev/null 2>&1
+  elif command -v 7zr > /dev/null 2>&1; then
+    7zr e "$_archive_file" "$_filename" -y > /dev/null 2>&1
+  else
+    echo "7z not found, installing p7zip..."
+    if command -v apt-get > /dev/null 2>&1; then
+      sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full > /dev/null 2>&1
+    elif command -v brew > /dev/null 2>&1; then
+      brew install p7zip > /dev/null 2>&1
+    else
+      >&2 echo "Cannot install 7z. Please install p7zip-full manually."
+      rm -f "$_archive_file"
+      return 1
+    fi
+    7z e "$_archive_file" "$_filename" -y > /dev/null 2>&1
+  fi
+
+  if [ -f "$_filename" ]; then
+    echo "Successfully extracted $_filename"
+    rm -f "$_archive_file"
+  else
+    echo "Failed to extract $_filename from archive"
+    rm -f "$_archive_file"
+    return 1
+  fi
 }
 
 $call fetch_network

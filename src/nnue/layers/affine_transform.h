@@ -24,7 +24,6 @@
 #include <cstdint>
 #include <iostream>
 
-#include "../../memory.h"
 #include "../nnue_common.h"
 #include "../simd.h"
 
@@ -40,7 +39,7 @@
 
 namespace Stockfish::Eval::NNUE::Layers {
 
-#if defined(USE_SSSE3) || defined(USE_NEON_DOTPROD) || defined(USE_LSX) || defined(USE_LASX)
+#if defined(USE_SSSE3) || defined(USE_NEON_DOTPROD)
     #define ENABLE_SEQ_OPT
 #endif
 
@@ -49,8 +48,10 @@ namespace Stockfish::Eval::NNUE::Layers {
 #ifndef ENABLE_SEQ_OPT
 
 template<IndexType InputDimensions, IndexType PaddedInputDimensions, IndexType OutputDimensions>
-static void
-affine_transform_non_ssse3(i32* output, const i8* weights, const i32* biases, const u8* input) {
+static void affine_transform_non_ssse3(std::int32_t*       output,
+                                       const std::int8_t*  weights,
+                                       const std::int32_t* biases,
+                                       const std::uint8_t* input) {
     #if defined(USE_SSE2) || defined(USE_NEON)
         #if defined(USE_SSE2)
     // At least a multiple of 16, with SSE2.
@@ -94,7 +95,7 @@ affine_transform_non_ssse3(i32* output, const i8* weights, const i32* biases, co
         #elif defined(USE_NEON)
 
         int32x4_t  sum = {biases[i]};
-        const auto row = reinterpret_cast<const SIMD::vec_i8x8_t*>(&weights[offset]);
+        const auto row = reinterpret_cast<const int8x8_t*>(&weights[offset]);
         for (IndexType j = 0; j < NumChunks; ++j)
         {
             int16x8_t product = vmull_s8(inputVector[j * 2], row[j * 2]);
@@ -105,35 +106,15 @@ affine_transform_non_ssse3(i32* output, const i8* weights, const i32* biases, co
 
         #endif
     }
-    #elif defined(USE_RVV)
-    for (IndexType i = 0; i < OutputDimensions; ++i)
-    {
-        const i8*  row  = &weights[i * PaddedInputDimensions];
-        vint32m1_t vsum = __riscv_vmv_v_x_i32m1(0, __riscv_vsetvlmax_e32m1());
-
-        for (usize j = 0; j < InputDimensions;)
-        {
-            usize vl = __riscv_vsetvl_e8m4(InputDimensions - j);
-
-            vint8m4_t  w    = __riscv_vle8_v_i8m4(&row[j], vl);
-            vuint8m4_t x    = __riscv_vle8_v_u8m4(&input[j], vl);
-            vint16m8_t prod = __riscv_vwmulsu_vv_i16m8(w, x, vl);
-
-            vsum = __riscv_vwredsum_vs_i16m8_i32m1(prod, vsum, vl);
-            j += vl;
-        }
-
-        output[i] = biases[i] + __riscv_vmv_x_s_i32m1_i32(vsum);
-    }
     #else
-    std::memcpy(output, biases, sizeof(i32) * OutputDimensions);
+    std::memcpy(output, biases, sizeof(std::int32_t) * OutputDimensions);
 
     // Traverse weights in transpose order to take advantage of input sparsity
     for (IndexType i = 0; i < InputDimensions; ++i)
         if (input[i])
         {
-            const i8* w  = &weights[i];
-            const int in = input[i];
+            const std::int8_t* w  = &weights[i];
+            const int          in = input[i];
             for (IndexType j = 0; j < OutputDimensions; ++j)
                 output[j] += w[j * PaddedInputDimensions] * in;
         }
@@ -146,8 +127,8 @@ template<IndexType InDims, IndexType OutDims>
 class AffineTransform {
    public:
     // Input/output type
-    using InputType  = u8;
-    using OutputType = i32;
+    using InputType  = std::uint8_t;
+    using OutputType = std::int32_t;
 
     // Number of input/output dimensions
     static constexpr IndexType InputDimensions  = InDims;
@@ -161,8 +142,8 @@ class AffineTransform {
     using OutputBuffer = OutputType[PaddedOutputDimensions];
 
     // Hash value embedded in the evaluation file
-    static constexpr u32 get_hash_value(u32 prevHash) {
-        u32 hashValue = 0xCC03DAE4u;
+    static constexpr std::uint32_t get_hash_value(std::uint32_t prevHash) {
+        std::uint32_t hashValue = 0xCC03DAE4u;
         hashValue += OutputDimensions;
         hashValue ^= prevHash >> 1;
         hashValue ^= prevHash << 31;
@@ -201,8 +182,8 @@ class AffineTransform {
         return !stream.fail();
     }
 
-    usize get_content_hash() const {
-        usize h = 0;
+    std::size_t get_content_hash() const {
+        std::size_t h = 0;
         hash_combine(h, get_raw_data_hash(biases));
         hash_combine(h, get_raw_data_hash(weights));
         hash_combine(h, get_hash_value(0));
@@ -219,12 +200,10 @@ class AffineTransform {
     #if defined(USE_AVX512)
             using vec_t = __m512i;
         #define vec_set_32 _mm512_set1_epi32
-        #define vec_add_32 _mm512_add_epi32
         #define vec_add_dpbusd_32 SIMD::m512_add_dpbusd_epi32
     #elif defined(USE_AVX2)
             using vec_t = __m256i;
         #define vec_set_32 _mm256_set1_epi32
-        #define vec_add_32 _mm256_add_epi32
         #define vec_add_dpbusd_32 SIMD::m256_add_dpbusd_epi32
     #elif defined(USE_SSSE3)
             using vec_t = __m128i;
@@ -236,16 +215,6 @@ class AffineTransform {
         #define vec_add_dpbusd_32(acc, a, b) \
             SIMD::dotprod_m128_add_dpbusd_epi32(acc, vreinterpretq_s8_s32(a), \
                                                 vreinterpretq_s8_s32(b))
-    #elif defined(USE_LASX)
-            using vec_t = __m256i;
-        #define vec_set_32 __lasx_xvreplgr2vr_w
-        #define vec_add_32 __lasx_xvadd_w
-        #define vec_add_dpbusd_32 SIMD::lasx_m256_add_dpbusd_epi32
-    #elif defined(USE_LSX)
-            using vec_t = __m128i;
-        #define vec_set_32 __lsx_vreplgr2vr_w
-        #define vec_add_32 __lsx_vadd_w
-        #define vec_add_dpbusd_32 SIMD::lsx_m128_add_dpbusd_epi32
     #endif
 
             static constexpr IndexType OutputSimdWidth = sizeof(vec_t) / sizeof(OutputType);
@@ -253,45 +222,17 @@ class AffineTransform {
             static_assert(OutputDimensions % OutputSimdWidth == 0);
 
             constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / 4;
-            constexpr IndexType NumAccums = OutputDimensions / OutputSimdWidth;
+            constexpr IndexType NumRegs   = OutputDimensions / OutputSimdWidth;
 
-    #if defined(USE_VNNI)
-            constexpr IndexType NumRegs = 2 * NumAccums;
-    #else
-            constexpr IndexType NumRegs = NumAccums;
-    #endif
-
+            const auto   input32 = reinterpret_cast<const std::int32_t*>(input);
             const vec_t* biasvec = reinterpret_cast<const vec_t*>(biases);
             vec_t        acc[NumRegs];
-            for (IndexType k = 0; k < NumAccums; ++k)
+            for (IndexType k = 0; k < NumRegs; ++k)
                 acc[k] = biasvec[k];
-            for (IndexType k = NumAccums; k < NumRegs; ++k)
-                acc[k] = vec_set_32(0);
 
-            IndexType i = 0;
-    #if defined(USE_VNNI)
-            for (; i < NumChunks; i += 2)
+            for (IndexType i = 0; i < NumChunks; ++i)
             {
-                const vec_t in0 = vec_set_32(load_as<i32>(input + i * sizeof(i32)));
-                const vec_t in1 = vec_set_32(load_as<i32>(input + (i + 1) * sizeof(i32)));
-                const auto  col0 =
-                  reinterpret_cast<const vec_t*>(&weights[i * OutputDimensions * 4]);
-                const auto col1 =
-                  reinterpret_cast<const vec_t*>(&weights[(i + 1) * OutputDimensions * 4]);
-
-                for (IndexType k = 0; k < NumAccums; ++k)
-                {
-                    vec_add_dpbusd_32(acc[k], in0, col0[k]);
-                    vec_add_dpbusd_32(acc[k + NumAccums], in1, col1[k]);
-                }
-            }
-
-            for (IndexType k = 0; k < NumAccums; ++k)
-                acc[k] = vec_add_32(acc[k], acc[k + NumAccums]);
-    #endif
-            for (; i < NumChunks; ++i)
-            {
-                const vec_t in0 = vec_set_32(load_as<i32>(input + i * sizeof(i32)));
+                const vec_t in0 = vec_set_32(input32[i]);
                 const auto  col0 =
                   reinterpret_cast<const vec_t*>(&weights[i * OutputDimensions * 4]);
 
@@ -327,16 +268,6 @@ class AffineTransform {
             SIMD::dotprod_m128_add_dpbusd_epi32(acc, vreinterpretq_s8_s32(a), \
                                                 vreinterpretq_s8_s32(b))
         #define vec_hadd SIMD::neon_m128_hadd
-    #elif defined(USE_LASX)
-            using vec_t = __m256i;
-        #define vec_setzero() __lasx_xvldi(0)
-        #define vec_add_dpbusd_32 SIMD::lasx_m256_add_dpbusd_epi32
-        #define vec_hadd SIMD::lasx_m256_hadd
-    #elif defined(USE_LSX)
-            using vec_t = __m128i;
-        #define vec_setzero() __lsx_vldi(0)
-        #define vec_add_dpbusd_32 SIMD::lsx_m128_add_dpbusd_epi32
-        #define vec_hadd SIMD::lsx_m128_hadd
     #endif
 
             const auto inputVector = reinterpret_cast<const vec_t*>(input);
@@ -369,7 +300,7 @@ class AffineTransform {
 
    private:
     using BiasType   = OutputType;
-    using WeightType = i8;
+    using WeightType = std::int8_t;
 
     alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];

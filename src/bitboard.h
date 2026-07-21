@@ -20,25 +20,21 @@
 #define BITBOARD_H_INCLUDED
 
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <cstring>
-#include <initializer_list>
+#include <cstdint>
+#include <cstdlib>
 #include <string>
-#include <utility>
 
 #include "types.h"
-#include "misc.h"
-
-namespace Stockfish {
 
 #ifdef USE_PEXT
     #define IF_NOT_PEXT(...)
-using MagicMask = u32;
 #else
     #define IF_NOT_PEXT(...) __VA_ARGS__
-using MagicMask = Bitboard;
 #endif
+
+namespace Stockfish {
 
 namespace Bitboards {
 
@@ -77,7 +73,7 @@ constexpr Bitboard HalfBB[2]  = {Rank0BB | Rank1BB | Rank2BB | Rank3BB | Rank4BB
 constexpr Bitboard PawnBB[2]  = {HalfBB[BLACK] | ((Rank3BB | Rank4BB) & PawnFileBB),
                                  HalfBB[WHITE] | ((Rank6BB | Rank5BB) & PawnFileBB)};
 
-extern u8 PopCnt16[1 << 16];
+extern uint8_t PopCnt16[1 << 16];
 
 extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
@@ -86,14 +82,10 @@ extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {
-    Bitboard   mask;
-    MagicMask* attacks;
-    unsigned   shift;
-#ifdef USE_PEXT
-    Bitboard pseudoAttacks;
-#else
-    Bitboard magic;
-#endif
+    Bitboard  mask;
+    Bitboard* attacks;
+    unsigned  shift;
+    IF_NOT_PEXT(Bitboard magic;)
 
     // Compute the attack's index using the 'magic bitboards' approach
     unsigned index(Bitboard occupied) const {
@@ -102,14 +94,6 @@ struct Magic {
         return unsigned(pext(occupied, mask, shift));
 #else
         return unsigned(((occupied & mask) * magic) >> shift);
-#endif
-    }
-
-    Bitboard attack_bb(Bitboard occupied) const {
-#ifdef USE_PEXT
-        return pdep(attacks[index(occupied)], pseudoAttacks);
-#else
-        return attacks[index(occupied)];
 #endif
     }
 };
@@ -123,7 +107,7 @@ extern Magic KnightToMagics[SQUARE_NB];
 constexpr auto SquareBB = [] {
     std::array<Bitboard, SQUARE_NB> SquareBB{};
     for (Square s = SQ_A0; s <= SQ_I9; ++s)
-        SquareBB[s] = (Bitboard(1ULL) << u8(s));
+        SquareBB[s] = (Bitboard(1ULL) << std::uint8_t(s));
     return SquareBB;
 }();
 
@@ -158,7 +142,7 @@ constexpr Bitboard rank_bb(Rank r) { return Rank0BB << (FILE_NB * r); }
 
 constexpr Bitboard rank_bb(Square s) { return rank_bb(rank_of(s)); }
 
-constexpr Bitboard file_bb(File f) { return FileABB << u8(f); }
+constexpr Bitboard file_bb(File f) { return FileABB << std::uint8_t(f); }
 
 constexpr Bitboard file_bb(Square s) { return file_bb(file_of(s)); }
 
@@ -166,16 +150,16 @@ constexpr Bitboard file_bb(Square s) { return file_bb(file_of(s)); }
 // Moves a bitboard one or two steps as specified by the direction D
 template<Direction D>
 constexpr Bitboard shift(Bitboard b) {
-    return D == NORTH         ? (b & ~Rank9BB) << u8(NORTH)
-         : D == SOUTH         ? b >> u8(NORTH)
-         : D == NORTH + NORTH ? (b & ~Rank9BB & ~Rank8BB) << u8(NORTH + NORTH)
-         : D == SOUTH + SOUTH ? b >> u8(NORTH + NORTH)
-         : D == EAST          ? (b & ~FileIBB) << u8(EAST)
-         : D == WEST          ? (b & ~FileABB) >> u8(EAST)
-         : D == NORTH_EAST    ? (b & ~FileIBB) << u8(NORTH_EAST)
-         : D == NORTH_WEST    ? (b & ~FileABB) << u8(NORTH_WEST)
-         : D == SOUTH_EAST    ? (b & ~FileIBB) >> u8(NORTH_WEST)
-         : D == SOUTH_WEST    ? (b & ~FileABB) >> u8(NORTH_EAST)
+    return D == NORTH         ? (b & ~Rank9BB) << std::uint8_t(NORTH)
+         : D == SOUTH         ? b >> std::uint8_t(NORTH)
+         : D == NORTH + NORTH ? (b & ~Rank9BB & ~Rank8BB) << std::uint8_t(NORTH + NORTH)
+         : D == SOUTH + SOUTH ? b >> std::uint8_t(NORTH + NORTH)
+         : D == EAST          ? (b & ~FileIBB) << std::uint8_t(EAST)
+         : D == WEST          ? (b & ~FileABB) >> std::uint8_t(EAST)
+         : D == NORTH_EAST    ? (b & ~FileIBB) << std::uint8_t(NORTH_EAST)
+         : D == NORTH_WEST    ? (b & ~FileABB) << std::uint8_t(NORTH_WEST)
+         : D == SOUTH_EAST    ? (b & ~FileIBB) >> std::uint8_t(NORTH_WEST)
+         : D == SOUTH_WEST    ? (b & ~FileABB) >> std::uint8_t(NORTH_EAST)
                               : Bitboard(0);
 }
 
@@ -266,7 +250,7 @@ constexpr int distance<Rank>(Square x, Square y) {
 }
 
 constexpr auto SquareDistance = [] {
-    std::array<std::array<u8, SQUARE_NB>, SQUARE_NB> SquareDistance{};
+    std::array<std::array<uint8_t, SQUARE_NB>, SQUARE_NB> SquareDistance{};
     for (Square s1 = SQ_A0; s1 <= SQ_I9; ++s1)
         for (Square s2 = SQ_A0; s2 <= SQ_I9; ++s2)
             SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
@@ -285,7 +269,7 @@ inline int popcount(Bitboard b) {
 
 #ifndef USE_POPCNT
 
-    u16 indices[8];
+    std::uint16_t indices[8];
     std::memcpy(indices, &b, sizeof(b));
     return PopCnt16[indices[0]] + PopCnt16[indices[1]] + PopCnt16[indices[2]] + PopCnt16[indices[3]]
          + PopCnt16[indices[4]] + PopCnt16[indices[5]] + PopCnt16[indices[6]]
@@ -301,6 +285,7 @@ inline int popcount(Bitboard b) {
 
 #endif
 }
+
 
 // Return the least significant bit in a non-zero bitboard
 inline Square lsb(Bitboard b) {
@@ -322,7 +307,7 @@ inline Square lsb(Bitboard b) {
 
 #else  // Assumed gcc or compatible compiler
 
-    if (u64(b))
+    if (uint64_t(b))
         return Square(__builtin_ctzll(b));
     return Square(__builtin_ctzll(b >> 64) + 64);
 
@@ -330,7 +315,7 @@ inline Square lsb(Bitboard b) {
 }
 
 // Returns the most significant bit in a 64 bit integer.
-inline int msb(u64 b) {
+inline int msb(uint64_t b) {
     assert(b);
 
 #if defined(_MSC_VER)
@@ -505,7 +490,7 @@ constexpr auto PseudoAttacks = [] {
 template<PieceType Pt>
 inline Bitboard attacks_bb(Square s, Color c = COLOR_NB) {
 
-    assert(Pt != KNIGHT_TO && ((Pt != PAWN && Pt != PAWN_TO) || c < COLOR_NB) && is_ok(s));
+    assert((Pt != KNIGHT_TO) && ((Pt != PAWN && Pt != PAWN_TO) || c < COLOR_NB) && (is_ok(s)));
     if constexpr (Pt != PAWN && Pt != PAWN_TO)
         return PseudoAttacks[Pt][s];
     else if constexpr (Pt == PAWN)
@@ -520,20 +505,20 @@ inline Bitboard attacks_bb(Square s, Color c = COLOR_NB) {
 template<PieceType Pt>
 inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 
-    assert(Pt != PAWN && Pt != PAWN_TO && is_ok(s));
+    assert((Pt != PAWN) && (Pt != PAWN_TO) && (is_ok(s)));
 
     switch (Pt)
     {
     case ROOK :
-        return RookMagics[s].attack_bb(occupied);
+        return RookMagics[s].attacks[RookMagics[s].index(occupied)];
     case CANNON :
-        return CannonMagics[s].attack_bb(occupied);
+        return CannonMagics[s].attacks[CannonMagics[s].index(occupied)];
     case BISHOP :
-        return BishopMagics[s].attack_bb(occupied);
+        return BishopMagics[s].attacks[BishopMagics[s].index(occupied)];
     case KNIGHT :
-        return KnightMagics[s].attack_bb(occupied);
+        return KnightMagics[s].attacks[KnightMagics[s].index(occupied)];
     case KNIGHT_TO :
-        return KnightToMagics[s].attack_bb(occupied);
+        return KnightToMagics[s].attacks[KnightToMagics[s].index(occupied)];
     default :
         return PseudoAttacks[Pt][s];
     }
@@ -544,7 +529,7 @@ inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 // Sliding piece attacks do not continue passed an occupied square.
 inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
 
-    assert(pt != PAWN && pt < KNIGHT_TO && is_ok(s));
+    assert((pt != PAWN) && (pt < KNIGHT_TO) && (is_ok(s)));
 
     switch (pt)
     {
@@ -564,7 +549,7 @@ inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
 template<PieceType Pt>
 inline Bitboard unconstrained_attacks_bb(Square s) {
 
-    assert((Pt == KING || Pt == ADVISOR) && is_ok(s));
+    assert((Pt == KING || Pt == ADVISOR) && (is_ok(s)));
 
     switch (Pt)
     {

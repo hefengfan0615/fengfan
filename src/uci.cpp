@@ -20,12 +20,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
+#include <functional>
 #include <iterator>
 #include <optional>
 #include <sstream>
 #include <string_view>
-#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -43,6 +42,7 @@ namespace Stockfish {
 
 constexpr auto BenchmarkCommand = "speedtest";
 
+constexpr auto StartFEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w";
 template<typename... Ts>
 struct overload: Ts... {
     using Ts::operator()...;
@@ -63,9 +63,9 @@ void UCIEngine::print_info_string(std::string_view str) {
     sync_cout_end();
 }
 
-UCIEngine::UCIEngine(CommandLine cli_) :
-    engine(cli_.argc > 0 ? std::optional{path_from_utf8(cli_.argv[0])} : std::nullopt),
-    cli(std::move(cli_)) {
+UCIEngine::UCIEngine(int argc, char** argv) :
+    engine(argv[0]),
+    cli(argc, argv) {
 
     engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
         if (str.has_value())
@@ -81,11 +81,10 @@ void UCIEngine::init_search_update_listeners() {
     engine.set_on_update_full(
       [this](const auto& i) { on_update_full(i, engine.get_options()["UCI_ShowWDL"]); });
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
-    engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
+    engine.set_on_verify_networks([](const auto& s) { print_info_string(s); });
 }
 
 void UCIEngine::loop() {
-    set_console_utf8();
     std::string token, cmd;
 
     for (int i = 1; i < cli.argc; ++i)
@@ -100,7 +99,7 @@ void UCIEngine::loop() {
         std::istringstream is(cmd);
 
         token.clear();  // Avoid a stale if getline() returns nothing or a blank line
-        is >> token;
+        is >> std::skipws >> token;
 
         if (token == "quit" || token == "stop")
             engine.stop();
@@ -131,6 +130,8 @@ void UCIEngine::loop() {
         }
         else if (token == "position")
             position(is);
+        else if (token == "fen" || token == "startpos")
+            is.seekg(0), position(is);
         else if (token == "ucinewgame")
             engine.search_clear();
         else if (token == "isready")
@@ -152,13 +153,12 @@ void UCIEngine::loop() {
             sync_cout << compiler_info() << sync_endl;
         else if (token == "export_net")
         {
-            std::optional<std::filesystem::path> file;
-            std::string                          filename;
+            std::pair<std::optional<std::string>, std::string> files;
 
-            if (is >> filename)
-                file = path_from_utf8(filename);
+            if (is >> std::skipws >> files.second)
+                files.first = files.second;
 
-            engine.save_network(file);
+            engine.save_network(files);
         }
         else if (token == "--help" || token == "help" || token == "--license" || token == "license")
             sync_cout
@@ -173,7 +173,7 @@ void UCIEngine::loop() {
             sync_cout << "Unknown command: '" << cmd << "'. Type help for more information."
                       << sync_endl;
 
-    } while (token != "quit" && cli.argc <= 1);  // The command-line arguments are one-shot
+    } while (token != "quit" && cli.argc == 1);  // The command-line arguments are one-shot
 }
 
 Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
@@ -227,8 +227,8 @@ void UCIEngine::go(std::istringstream& is) {
 
 void UCIEngine::bench(std::istream& args) {
     std::string token;
-    u64         num, nodes = 0, cnt = 1;
-    u64         nodesSearched = 0;
+    uint64_t    num, nodes = 0, cnt = 1;
+    uint64_t    nodesSearched = 0;
     const auto& options       = engine.get_options();
 
     engine.set_on_update_full([&](const auto& i) {
@@ -246,7 +246,7 @@ void UCIEngine::bench(std::istream& args) {
     for (const auto& cmd : list)
     {
         std::istringstream is(cmd);
-        is >> token;
+        is >> std::skipws >> token;
 
         if (token == "go" || token == "eval")
         {
@@ -299,15 +299,15 @@ void UCIEngine::benchmark(std::istream& args) {
     static constexpr int NUM_WARMUP_POSITIONS = 3;
 
     std::string token;
-    u64         nodes = 0, cnt = 1;
-    u64         nodesSearched = 0;
+    uint64_t    nodes = 0, cnt = 1;
+    uint64_t    nodesSearched = 0;
 
     engine.set_on_update_full([&](const Engine::InfoFull& i) { nodesSearched = i.nodes; });
 
     engine.set_on_iter([](const auto&) {});
     engine.set_on_update_no_moves([](const auto&) {});
     engine.set_on_bestmove([](const auto&, const auto&) {});
-    engine.set_on_verify_network([](const auto&) {});
+    engine.set_on_verify_networks([](const auto&) {});
 
     Benchmark::BenchmarkSetup setup = Benchmark::setup_benchmark(args);
 
@@ -326,7 +326,7 @@ void UCIEngine::benchmark(std::istream& args) {
     for (const auto& cmd : setup.commands)
     {
         std::istringstream is(cmd);
-        is >> token;
+        is >> std::skipws >> token;
 
         if (token == "go")
         {
@@ -377,7 +377,7 @@ void UCIEngine::benchmark(std::istream& args) {
     for (const auto& cmd : setup.commands)
     {
         std::istringstream is(cmd);
-        is >> token;
+        is >> std::skipws >> token;
 
         if (token == "go")
         {
@@ -455,15 +455,13 @@ void UCIEngine::setoption(std::istringstream& is) {
     engine.get_options().setoption(is);
 }
 
-u64 UCIEngine::perft(const Search::LimitsType& limits) {
+std::uint64_t UCIEngine::perft(const Search::LimitsType& limits) {
     auto nodes = engine.perft(engine.fen(), limits.perft);
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
     return nodes;
 }
 
 void UCIEngine::position(std::istringstream& is) {
-    const std::string fullCommand = is.str();
-
     std::string token, fen;
 
     is >> token;
@@ -486,11 +484,7 @@ void UCIEngine::position(std::istringstream& is) {
         moves.push_back(token);
     }
 
-    auto err = engine.set_position(fen, moves);
-    if (err.has_value())
-    {
-        terminate_on_critical_error(fullCommand, err->what());
-    }
+    engine.set_position(fen, moves);
 }
 
 namespace {
@@ -637,14 +631,6 @@ void UCIEngine::on_bestmove(std::string_view bestmove, std::string_view ponder) 
     if (!ponder.empty())
         std::cout << " ponder " << ponder;
     std::cout << sync_endl;
-}
-
-void UCIEngine::terminate_on_critical_error(const std::string& fullCommand,
-                                            const std::string& message) {
-    sync_cout << "info string CRITICAL ERROR: Command `" << fullCommand
-              << "` failed. Reason: " << message << '\n'
-              << sync_endl;
-    std::exit(1);
 }
 
 }  // namespace Stockfish

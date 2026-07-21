@@ -20,7 +20,6 @@
 
 #include <cassert>
 #include <cstdlib>
-#include <cmath>
 
 #include "uci.h"
 

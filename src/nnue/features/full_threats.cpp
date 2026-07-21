@@ -21,31 +21,29 @@
 #include "full_threats.h"
 
 #include <array>
-#include <utility>
 
-#include "../../bitboard.h"
-#include "../../misc.h"
 #include "../../position.h"
 #include "../../types.h"
 #include "../nnue_common.h"
-#include "half_ka_v2_hm.h"
 
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
 auto ThreatOffsets = []() {
-    MultiArray<u16, PIECE_NB, SQUARE_NB, SQUARE_NB, PIECE_NB> ThreatOffsets{};
+    std::array<std::array<std::array<std::array<uint16_t, PIECE_NB>, SQUARE_NB>, SQUARE_NB>,
+               PIECE_NB>
+      ThreatOffsets{};
     // clang-format off
     constexpr bool ValidPairs[PIECE_NB][PIECE_NB] = {
       //    R   A   C   P   N   B   K   _   r   a   c   p   n   b   k
       { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, // _
       { 0,  1,  1,  1,  1,  1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  0}, // R
-      { 0,  1,  1,  1,  0,  1,  0,  0,  0,  1,  0,  1,  1,  1,  0,  0}, // A
+      { 0,  1,  1,  1,  0,  1,  0,  1,  0,  1,  0,  1,  1,  1,  0,  0}, // A
       { 0,  1,  1,  1,  1,  1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  0}, // C
       { 0,  0,  0,  1,  1,  1,  1,  0,  0,  0,  1,  1,  1,  1,  1,  0}, // P
       { 0,  1,  1,  1,  1,  1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  0}, // N
       { 0,  1,  0,  1,  1,  1,  1,  1,  0,  1,  0,  1,  1,  1,  0,  0}, // B
-      { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, // K
+      { 0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0,  1,  1,  1,  0,  0}, // K
       { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, // _
       { 0,  1,  1,  1,  1,  1,  1,  0,  0,  1,  1,  1,  1,  1,  1,  1}, // r
       { 0,  1,  0,  1,  1,  1,  0,  0,  0,  1,  1,  1,  0,  1,  0,  1}, // a
@@ -58,10 +56,10 @@ auto ThreatOffsets = []() {
     // clang-format on
 
     // Initialize threat offsets to be all Dimension
-    for (u8 i = 0; i < PIECE_NB; ++i)
-        for (u8 j = 0; j < SQUARE_NB; ++j)
-            for (u8 k = 0; k < SQUARE_NB; ++k)
-                for (u8 l = 0; l < PIECE_NB; ++l)
+    for (size_t i = 0; i < PIECE_NB; ++i)
+        for (size_t j = 0; j < SQUARE_NB; ++j)
+            for (size_t k = 0; k < SQUARE_NB; ++k)
+                for (size_t l = 0; l < PIECE_NB; ++l)
                     ThreatOffsets[i][j][k][l] = FullThreats::Dimensions;
 
     int cumulativeOffset = 0;
@@ -125,8 +123,8 @@ IndexType FullThreats::make_index(
 
 // Get a list of indices for active features in ascending order
 void FullThreats::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
-    const Square ksq  = pos.king_square(perspective);
-    const Square oksq = pos.king_square(~perspective);
+    Square ksq  = pos.king_square(perspective);
+    Square oksq = pos.king_square(~perspective);
     auto& [_, mirror] =
       HalfKAv2_hm::KingBuckets[ksq][oksq][HalfKAv2_hm::requires_mid_mirror(pos, perspective)];
     Bitboard occupied = pos.pieces();
@@ -147,20 +145,16 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
             Piece     attacked = pos.piece_on(to);
             IndexType index    = make_index(perspective, attacker, from, to, attacked, mirror);
 
-            active.push_back_if_lt(index, Dimensions);
+            if (index < Dimensions)
+                active.push_back(index);
         }
     }
 }
 
 // Get a list of indices for recently changed features
-void FullThreats::append_changed_indices(Color                   perspective,
-                                         bool                    mirror,
-                                         const DiffType&         diff,
-                                         IndexList&              removed,
-                                         IndexList&              added,
-                                         const ThreatWeightType* prefetchBase,
-                                         IndexType               prefetchStride) {
-    for (const auto& dirty : diff.list)
+void FullThreats::append_changed_indices(
+  Color perspective, bool mirror, const DiffType& diff, IndexList& removed, IndexList& added) {
+    for (const auto dirty : diff.list)
     {
         auto attacker = dirty.pc();
         auto attacked = dirty.threatened_pc();
@@ -171,11 +165,13 @@ void FullThreats::append_changed_indices(Color                   perspective,
         auto&     insert = add ? added : removed;
         IndexType index  = make_index(perspective, attacker, from, to, attacked, mirror);
 
-        if (prefetchBase)
-            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
-              reinterpret_cast<uintptr_t>(prefetchBase) + index * prefetchStride));
-        insert.push_back_if_lt(index, Dimensions);
+        if (index < Dimensions)
+            insert.push_back(index);
     }
+}
+
+bool FullThreats::requires_refresh(const DiffType& diff, Color perspective) {
+    return diff.requires_refresh[perspective];
 }
 
 }  // namespace Stockfish::Eval::NNUE::Features
