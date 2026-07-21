@@ -52,7 +52,6 @@ self.onmessage = function(ev) {
     self.Module = {
       noInitialRun: true,
       arguments: [],
-      wasmBinary: wasmBinary,
       print: function(line) { stdout(line); },
       printErr: function(line) { stderr(line); },
     };
