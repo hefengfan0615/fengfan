@@ -86,6 +86,54 @@ Module["preRun"].push(function() {
   }
 });
 // end include: preload_nnue.js
+// include: emscripten/preamble.js
+Module["engine_ready"] = Module["engine_ready"] || false;
+Module["send_command"] = Module["send_command"] || (() => {});
+Module["read_stdout"] =
+  Module["read_stdout"] || ((output) => console.log(output));
+if (!Module["preRun"]) Module["preRun"] = [];
+Module["preRun"].push(function () {
+  let input = {
+    str: "",
+    index: 0,
+    set: function (str) {
+      this.str = str + "\n";
+      this.index = 0;
+    },
+  };
+
+  let output = {
+    str: "",
+    flush: function () {
+      Module.read_stdout(this.str);
+      this.str = "";
+    },
+  };
+
+  function stdin() {
+    // Return ASCII code of character, or null if no input
+    let char = input.str.charCodeAt(input.index++);
+    return isNaN(char) ? null : char;
+  }
+
+  function stdout(char) {
+    if (!char || char == "\n".charCodeAt(0)) {
+      output.flush();
+    } else {
+      output.str += String.fromCharCode(char);
+    }
+  }
+
+  FS.init(stdin, stdout, stdout);
+  let wasm_uci_execute = Module.cwrap("wasm_uci_execute", "void", []);
+  Module.send_command = function (data) {
+    input.set(data);
+    wasm_uci_execute();
+  };
+});
+Module["onRuntimeInitialized"] = function () {
+  Module.engine_ready = true;
+};// end include: emscripten/preamble.js
 
 
 var programArgs = [];
@@ -4588,6 +4636,88 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       return ret;
     };
 
+  var getCFunc = (ident) => {
+      var func = Module['_' + ident]; // closure exported function
+      assert(func, `Cannot call unknown function ${ident}, make sure it is exported`);
+      return func;
+    };
+  
+  var writeArrayToMemory = (array, buffer) => {
+      assert(array.length >= 0, 'writeArrayToMemory array must have a length (should be an array or typed array)')
+      HEAP8.set(array, buffer);
+    };
+  
+  
+  
+  
+  
+  
+    /**
+   * @param {string|null=} returnType
+   * @param {Array=} argTypes
+   * @param {Array=} args
+   * @param {Object=} opts
+   */
+  var ccall = (ident, returnType, argTypes, args, opts) => {
+      // For fast lookup of conversion functions
+      var toC = {
+        'string': (str) => {
+          var ret = 0;
+          if (str !== null && str !== undefined && str !== 0) { // null string
+            ret = stringToUTF8OnStack(str);
+          }
+          return ret;
+        },
+        'array': (arr) => {
+          var ret = stackAlloc(arr.length);
+          writeArrayToMemory(arr, ret);
+          return ret;
+        }
+      };
+  
+      function convertReturnValue(ret) {
+        if (returnType === 'string') {
+          return UTF8ToString(ret);
+        }
+        if (returnType === 'boolean') return Boolean(ret);
+        return ret;
+      }
+  
+      var func = getCFunc(ident);
+      var cArgs = [];
+      var stack = 0;
+      assert(returnType !== 'array', 'return type should not be "array"');
+      if (args) {
+        for (var i = 0; i < args.length; i++) {
+          var converter = toC[argTypes[i]];
+          if (converter) {
+            if (stack === 0) stack = stackSave();
+            cArgs[i] = converter(args[i]);
+          } else {
+            cArgs[i] = args[i];
+          }
+        }
+      }
+      var ret = func(...cArgs);
+      function onDone(ret) {
+        if (stack !== 0) stackRestore(stack);
+        return convertReturnValue(ret);
+      }
+  
+      ret = onDone(ret);
+      return ret;
+    };
+  
+    /**
+   * @param {string=} returnType
+   * @param {Array=} argTypes
+   * @param {Object=} opts
+   */
+  var cwrap = (ident, returnType, argTypes, opts) => {
+      return (...args) => ccall(ident, returnType, argTypes, args, opts);
+    };
+
+
   FS.createPreloadedFile = FS_createPreloadedFile;
   FS.preloadFile = FS_preloadFile;
   FS.staticInit();;
@@ -4640,6 +4770,8 @@ if (Module['printErr']) err = Module['printErr'];
 }
 
 // Begin runtime exports
+  Module['cwrap'] = cwrap;
+  Module['FS'] = FS;
   var missingLibrarySymbols = [
   'writeI53ToI64',
   'writeI53ToI64Clamped',
@@ -4680,8 +4812,6 @@ if (Module['printErr']) err = Module['printErr'];
   'STACK_ALIGN',
   'POINTER_SIZE',
   'ASSERTIONS',
-  'ccall',
-  'cwrap',
   'convertJsFunctionToWasm',
   'getEmptyTableSlot',
   'updateTableMap',
@@ -4698,7 +4828,6 @@ if (Module['printErr']) err = Module['printErr'];
   'stringToUTF32',
   'lengthBytesUTF32',
   'stringToNewUTF8',
-  'writeArrayToMemory',
   'registerKeyEventCallback',
   'maybeCStringToJsString',
   'findEventTarget',
@@ -4859,6 +4988,7 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'removeRunDependency',
   'addOnPreRun',
   'addOnPostRun',
+  'ccall',
   'freeTableIndexes',
   'functionsInTableMap',
   'setValue',
@@ -4874,6 +5004,7 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'intArrayFromString',
   'UTF16Decoder',
   'stringToUTF8OnStack',
+  'writeArrayToMemory',
   'JSEvents',
   'specialHTMLTargets',
   'findCanvasEventTarget',
@@ -4917,7 +5048,6 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'FS_createPath',
   'FS_createDevice',
   'FS_readFile',
-  'FS',
   'FS_root',
   'FS_mounts',
   'FS_devices',
@@ -5083,6 +5213,7 @@ function checkIncomingModuleAPI() {
 
 // Imports from the Wasm binary.
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
+var _wasm_uci_execute = Module['_wasm_uci_execute'] = makeInvalidEarlyAccess('_wasm_uci_execute');
 var _fflush = makeInvalidEarlyAccess('_fflush');
 var _emscripten_stack_get_end = makeInvalidEarlyAccess('_emscripten_stack_get_end');
 var _emscripten_stack_get_base = makeInvalidEarlyAccess('_emscripten_stack_get_base');
@@ -5100,6 +5231,7 @@ var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['__main_argc_argv'] != 'undefined', 'missing Wasm export: __main_argc_argv');
+  assert(typeof wasmExports['wasm_uci_execute'] != 'undefined', 'missing Wasm export: wasm_uci_execute');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
   assert(typeof wasmExports['emscripten_stack_get_end'] != 'undefined', 'missing Wasm export: emscripten_stack_get_end');
   assert(typeof wasmExports['emscripten_stack_get_base'] != 'undefined', 'missing Wasm export: emscripten_stack_get_base');
@@ -5113,6 +5245,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
   _main = Module['_main'] = createExportWrapper('__main_argc_argv', wasmExports['__main_argc_argv'], 2);
+  _wasm_uci_execute = Module['_wasm_uci_execute'] = createExportWrapper('wasm_uci_execute', wasmExports['wasm_uci_execute'], 0);
   _fflush = createExportWrapper('fflush', wasmExports['fflush'], 1);
   _emscripten_stack_get_end = wasmExports['emscripten_stack_get_end'];
   _emscripten_stack_get_base = wasmExports['emscripten_stack_get_base'];
