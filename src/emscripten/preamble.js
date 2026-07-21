@@ -4,6 +4,10 @@ Module["read_stdout"] =
   Module["read_stdout"] || ((output) => console.log(output));
 if (!Module["preRun"]) Module["preRun"] = [];
 Module["preRun"].push(function () {
+  // Skip if stdin is already configured (e.g. by a Web Worker),
+  // otherwise the web page interface will take over.
+  if (Module["stdin"]) return;
+
   let input = {
     str: "",
     index: 0,
@@ -42,6 +46,11 @@ Module["preRun"].push(function () {
     wasm_uci_execute();
   };
 });
+
+// Chain onRuntimeInitialized instead of overriding, so that
+// Web Workers that set their own handler are not broken.
+var prevOnRuntimeInitialized = Module["onRuntimeInitialized"];
 Module["onRuntimeInitialized"] = function () {
   Module.engine_ready = true;
+  if (prevOnRuntimeInitialized) prevOnRuntimeInitialized();
 };
