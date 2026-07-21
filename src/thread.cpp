@@ -53,6 +53,13 @@ Thread::Thread(Search::SharedState&                    sharedState,
     nthreads(sharedState.options["Threads"]),
     stdThread(&Thread::idle_loop, this) {
 
+#ifdef WASM_SINGLE_THREAD
+    // In single-threaded WASM, run initialization directly instead of via thread
+    this->numaAccessToken = binder();
+    this->worker          = make_unique_large_page<Search::Worker>(
+      sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
+    searching = false;
+#else
     wait_for_search_finished();
 
     run_custom_job([this, &binder, &sharedState, &sm, n]() {
@@ -65,6 +72,7 @@ Thread::Thread(Search::SharedState&                    sharedState,
     });
 
     wait_for_search_finished();
+#endif
 }
 
 
@@ -75,20 +83,30 @@ Thread::~Thread() {
     assert(!searching);
 
     exit = true;
+#ifndef WASM_SINGLE_THREAD
     start_searching();
     stdThread.join();
+#endif
 }
 
 // Wakes up the thread that will start the search
 void Thread::start_searching() {
     assert(worker != nullptr);
+#ifdef WASM_SINGLE_THREAD
+    worker->start_searching();
+#else
     run_custom_job([this]() { worker->start_searching(); });
+#endif
 }
 
 // Clears the histories for the thread worker (usually before a new game)
 void Thread::clear_worker() {
     assert(worker != nullptr);
+#ifdef WASM_SINGLE_THREAD
+    worker->clear();
+#else
     run_custom_job([this]() { worker->clear(); });
+#endif
 }
 
 // Blocks on the condition variable until the thread has finished searching
@@ -100,6 +118,10 @@ void Thread::wait_for_search_finished() {
 
 // Launching a function in the thread
 void Thread::run_custom_job(std::function<void()> f) {
+#ifdef WASM_SINGLE_THREAD
+    // In WASM single-threaded mode, execute directly
+    f();
+#else
     {
         std::unique_lock<std::mutex> lk(mutex);
         cv.wait(lk, [&] { return !searching; });
@@ -107,6 +129,7 @@ void Thread::run_custom_job(std::function<void()> f) {
         searching = true;
     }
     cv.notify_one();
+#endif
 }
 
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
@@ -157,10 +180,17 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
         boundThreadToNumaNode.clear();
     }
 
+#ifdef WASM_SINGLE_THREAD
+    // In single-threaded WASM, always use exactly 1 thread
+    const size_t requested = 1;
+    sharedState.options["Threads"] = "1";
+#else
     const size_t requested = sharedState.options["Threads"];
+#endif
 
     if (requested > 0)  // create new thread(s)
     {
+#ifndef WASM_SINGLE_THREAD
         // Binding threads may be problematic when there's multiple NUMA nodes and
         // multiple Stockfish instances running. In particular, if each instance
         // runs a single thread then they would all be mapped to the first NUMA node.
@@ -208,10 +238,22 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
 
         auto threadsPerNode = counts;
         counts.clear();
+#else
+        // WASM single-thread: skip NUMA binding, just 1 thread
+        sharedState.sharedHistories.clear();
+        sharedState.sharedHistories.try_emplace(0, 1);
+#endif
 
         while (threads.size() < requested)
         {
             const size_t    threadId = threads.size();
+#ifdef WASM_SINGLE_THREAD
+            const NumaIndex numaId   = 0;
+            auto            manager  = std::make_unique<Search::SearchManager>(updateContext);
+            auto            binder   = OptionalThreadToNumaNodeBinder(numaId);
+            threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager), threadId,
+                                                          0, 1, binder));
+#else
             const NumaIndex numaId   = doBindThreads ? boundThreadToNumaNode[threadId] : 0;
             auto            manager  = threadId == 0 ? std::unique_ptr<Search::ISearchManager>(
                                              std::make_unique<Search::SearchManager>(updateContext))
@@ -227,6 +269,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager), threadId,
                                                           counts[numaId]++, threadsPerNode[numaId],
                                                           binder));
+#endif
         }
 
         clear();
@@ -397,18 +440,22 @@ Thread* ThreadPool::get_best_thread() const {
 // Will be invoked by main thread after it has started searching.
 void ThreadPool::start_searching() {
 
+#ifndef WASM_SINGLE_THREAD
     for (auto&& th : threads)
         if (th != threads.front())
             th->start_searching();
+#endif
 }
 
 
 // Wait for non-main threads
 void ThreadPool::wait_for_search_finished() const {
 
+#ifndef WASM_SINGLE_THREAD
     for (auto&& th : threads)
         if (th != threads.front())
             th->wait_for_search_finished();
+#endif
 }
 
 std::vector<size_t> ThreadPool::get_bound_thread_count_by_numa_node() const {

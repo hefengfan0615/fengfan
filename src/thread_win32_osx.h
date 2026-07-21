@@ -65,6 +65,25 @@ class NativeThread {
 
 }  // namespace Stockfish
 
+#elif defined(WASM_SINGLE_THREAD)
+
+// WASM single-threaded: NativeThread is a no-op wrapper that executes
+// synchronously on the main thread. No real thread is spawned.
+
+namespace Stockfish {
+
+class NativeThread {
+   public:
+    template<class Function, class... Args>
+    explicit NativeThread(Function&&, Args&&...) {
+        // No-op: function will be called synchronously by the caller
+    }
+
+    void join() {}
+};
+
+}  // namespace Stockfish
+
 #else  // Default case: use STL classes
 
 namespace Stockfish {
