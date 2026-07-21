@@ -125,7 +125,7 @@ PikafishUciSearch.prototype.init = function(wasmBinary, engineJs, nnueData) {
 };
 
 /* 引擎版本：与 sw.js / xqwlight/sw.js 保持一致 */
-var ENGINE_VERSION = "20260721-144405";
+var ENGINE_VERSION = "20260721-145821";
 var ENGINE_QUERY = "?v=" + ENGINE_VERSION;
 
 /* relaxed SIMD 特性检测：与 pikafish.html 中同步，决定下载哪份引擎二进制。
