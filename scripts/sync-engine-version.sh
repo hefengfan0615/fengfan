@@ -12,10 +12,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-WASM="$ROOT/wasm/pikafish.wasm"
-JS="$ROOT/wasm/pikafish.js"
-RELAXED_WASM="$ROOT/wasm/pikafish.relaxed.wasm"
-RELAXED_JS="$ROOT/wasm/pikafish.relaxed.js"
+WASM="$ROOT/xqwlight/wasm/pikafish.wasm"
+JS="$ROOT/xqwlight/wasm/pikafish.js"
+RELAXED_WASM="$ROOT/xqwlight/wasm/pikafish.relaxed.wasm"
+RELAXED_JS="$ROOT/xqwlight/wasm/pikafish.relaxed.js"
 
 if [ ! -f "$WASM" ] || [ ! -f "$JS" ]; then
   echo "错误：找不到 $WASM 或 $JS" >&2
@@ -34,17 +34,6 @@ BUILD_TIME=$(date -u +'%H%M%S')
 ENGINE_VERSION="${WASM_DATE}-${BUILD_TIME}"
 
 echo "同步引擎版本: $ENGINE_VERSION"
-
-# 复制到 xqwlight 部署目录（含 relaxed 和非 relaxed 两个变体）
-mkdir -p "$ROOT/xqwlight/wasm"
-cp "$JS"           "$ROOT/xqwlight/wasm/pikafish.js"
-cp "$WASM"         "$ROOT/xqwlight/wasm/pikafish.wasm"
-if [ -f "$RELAXED_JS" ]; then
-  cp "$RELAXED_JS" "$ROOT/xqwlight/wasm/pikafish.relaxed.js"
-fi
-if [ -f "$RELAXED_WASM" ]; then
-  cp "$RELAXED_WASM" "$ROOT/xqwlight/wasm/pikafish.relaxed.wasm"
-fi
 
 # 更新所有前端文件里的 ENGINE_VERSION
 FILES=(
