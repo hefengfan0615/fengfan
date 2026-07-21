@@ -610,8 +610,6 @@ function restart_click() {
   uciStatusEl.textContent = '引擎就绪';
   var evEl = document.getElementById('engineVersion');
   evEl.textContent = engineVersion + (evEl.dataset.simdFlag || '');
-  // 重新开始后如果轮到电脑走棋则触发
-  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
 }
 
 function retract_click() {
