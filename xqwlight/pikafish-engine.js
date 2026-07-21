@@ -356,7 +356,7 @@ PikafishUciSearch.prototype._parseInfo = function(line) {
   // 只处理包含 pv 的 info 行
   if (line.indexOf(' pv ') < 0) return;
   var self = this;
-  var info = { depth: '?', score: '?', nodes: '?', pv: [] };
+  var info = { depth: '?', scoreType: '', score: 0, nodes: '?', pv: [] };
 
   // depth N
   var m = line.match(/\bdepth\s+(\d+)/);
@@ -366,10 +366,17 @@ PikafishUciSearch.prototype._parseInfo = function(line) {
   var m2 = line.match(/\bscore\s+(cp|mate)\s+([-\d]+)/);
   if (m2) {
     if (m2[1] === 'mate') {
-      info.score = '#' + m2[2];
+      var mateSteps = parseInt(m2[2]);
+      if (mateSteps >= 0) {
+        info.scoreType = 'mate';
+        info.score = mateSteps;
+      } else {
+        info.scoreType = 'mated';
+        info.score = Math.abs(mateSteps);
+      }
     } else {
-      var cp = parseInt(m2[2]);
-      info.score = (cp >= 0 ? '+' : '') + cp;
+      info.scoreType = 'cp';
+      info.score = parseInt(m2[2]);
     }
   }
 
