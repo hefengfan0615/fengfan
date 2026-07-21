@@ -183,7 +183,6 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
 #ifdef WASM_SINGLE_THREAD
     // In single-threaded WASM, always use exactly 1 thread
     const size_t requested = 1;
-    sharedState.options["Threads"] = "1";
 #else
     const size_t requested = sharedState.options["Threads"];
 #endif
