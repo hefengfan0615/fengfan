@@ -853,10 +853,13 @@ endif
 
 ### 3.7.1 WASM-specific flags (single-threaded)
 ifeq ($(arch),wasm32)
-	CXXFLAGS += -msimd128 -DUSE_POPCNT -DWASM_SINGLE_THREAD
+	CXXFLAGS += -msimd128 -DUSE_POPCNT -DWASM_SINGLE_THREAD -DUSE_WASM_SIMD
 	LDFLAGS += -sINITIAL_MEMORY=128MB -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=3MB
+	LDFLAGS += --pre-js emscripten/preamble.js
+	LDFLAGS += -sEXPORTED_FUNCTIONS='["_main","_wasm_uci_execute"]'
+	LDFLAGS += -sEXPORTED_RUNTIME_METHODS='["cwrap","FS"]'
 	ifeq ($(relaxedsimd),yes)
-		CXXFLAGS += -mrelaxed-simd
+		CXXFLAGS += -mrelaxed-simd -DUSE_WASM_SIMD_RELAXED
 	endif
 endif
 

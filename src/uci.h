@@ -41,6 +41,7 @@ class UCIEngine {
     UCIEngine(int argc, char** argv);
 
     void loop();
+    void set_cli(const CommandLine& cli) { this->cli = cli; }
 
     static int         to_cp(Value v, const Position& pos);
     static std::string format_score(const Score& s);
@@ -75,5 +76,8 @@ class UCIEngine {
 };
 
 }  // namespace Stockfish
+
+// For web-assembly, we only execute UCI::loop() once in avoid of blocking main thread.
+extern "C" void wasm_uci_execute();
 
 #endif  // #ifndef UCI_H_INCLUDED
