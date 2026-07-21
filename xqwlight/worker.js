@@ -67,7 +67,7 @@ self.onmessage = function(ev) {
         postMsg({ type: 'error', text: "引擎未就绪" });
         return;
       }
-      processSearch(m.commands);
+      processSearch(m.commands, m.searchId);
       break;
 
     case 'quit':
@@ -143,9 +143,9 @@ function initEngine(wasmBinary, engineJs, nnueData) {
 }
 
 /* ---------- 处理搜索命令 ---------- */
-function processSearch(commands) {
+function processSearch(commands, searchId) {
   if (!Array.isArray(commands)) {
-    postMsg({ type: 'done', code: 0 });
+    postMsg({ type: 'done', code: 0, searchId: searchId });
     return;
   }
 
@@ -153,7 +153,7 @@ function processSearch(commands) {
   for (var i = 0; i < commands.length; i++) {
     feedCommand(commands[i]);
   }
-  postMsg({ type: 'done', code: 0 });
+  postMsg({ type: 'done', code: 0, searchId: searchId });
 }
 
 debug("worker.js 持久引擎模式已就绪");
