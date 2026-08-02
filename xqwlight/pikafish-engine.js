@@ -510,3 +510,50 @@ PikafishUciSearch.prototype.stopEngine = function() {
     self.worker.postMessage({ type: 'stop' });
   }
 };
+
+/* 分析模式：发送 position fen + moves 后 go infinite，持续分析不返回走法 */
+PikafishUciSearch.prototype.searchInfinite = function(fen, movesList, hasStartFen) {
+  var self = this;
+
+  if (!self.worker || !self.engineReady) {
+    return self.startEngine().then(function() {
+      return self.searchInfinite(fen, movesList, hasStartFen);
+    });
+  }
+
+  // 作废上一次未结束的搜索
+  if (self._pendingSearch) {
+    var prev = self._pendingSearch;
+    self._pendingSearch = null;
+    if (prev.timeoutId) clearTimeout(prev.timeoutId);
+    try { prev.reject(new Error('__superseded__')); } catch (e) {}
+  }
+
+  var commands = [];
+  var posCmd = "position fen " + fen;
+  if (hasStartFen && movesList && movesList.length > 0) {
+    posCmd += " moves " + movesList.join(" ");
+  }
+  commands.push(posCmd);
+  commands.push("go infinite");
+
+  if (self.onUciStdout) {
+    var debugMoves = (hasStartFen && movesList && movesList.length > 0) ? movesList.join(',') : '无';
+    self.onUciStdout('[分析] fen=' + fen + '  moves=' + debugMoves);
+  }
+
+  for (var i = 0; i < commands.length; i++) {
+    if (self.onUciStdout) self.onUciStdout('[UCI→] ' + commands[i]);
+  }
+
+  self.stdoutBuffer = [];
+  self.bestmove = "";
+
+  self.worker.postMessage({
+    type: 'search',
+    commands: commands,
+    searchId: ++self._currentSearchId
+  });
+
+  return Promise.resolve();
+};

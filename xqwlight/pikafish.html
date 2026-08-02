@@ -549,11 +549,9 @@ board.computerMove = function() {
   return false;
 };
 
-// 覆盖 flipped：compRed 且 !compBlack 时才翻转（电脑执红 → 红在下方）
+// 覆盖 flipped：完全由 displayFlipped 控制棋盘方向
 board.flipped = function(sq) {
-  var flip = board.compRed && !board.compBlack;
-  if (board.displayFlipped) flip = !flip;
-  return flip ? SQUARE_FLIP(sq) : sq;
+  return board.displayFlipped ? SQUARE_FLIP(sq) : sq;
 };
 
 Board.prototype.response = function() {
@@ -598,6 +596,8 @@ board.onAddMove = function() {
   catch (e) { selMoveList.add(createOption(text, value, true)); }
   selMoveList.scrollTop = selMoveList.scrollHeight;
   saveGameState();
+  // 分析模式下走棋后重新启动分析
+  if (board.analysisMode) startAnalysisEngine();
 };
 
 function createOption(text, value, ie8) {
@@ -637,6 +637,8 @@ function restart_click() {
   uciStatusEl.textContent = '引擎就绪';
   var evEl = document.getElementById('engineVersion');
   evEl.textContent = engineVersion + (evEl.dataset.simdFlag || '');
+  // 分析模式下重新开始后重启分析
+  if (board.analysisMode) startAnalysisEngine();
 }
 
 function retract_click() {
@@ -644,6 +646,8 @@ function retract_click() {
   board.retract();
   selMoveList.options.length = board.pos.mvList.length;
   selMoveList.selectedIndex = selMoveList.options.length - 1;
+  // 分析模式下悔棋后重启分析
+  if (board.analysisMode) startAnalysisEngine();
 }
 
 function moveList_change() {
@@ -653,6 +657,8 @@ function moveList_change() {
   if (from > to + 1) { for (var i = to + 1; i < from; i++) board.pos.undoMakeMove(); }
   else { for (var i = from; i <= to; i++) board.pos.makeMove(parseInt(selMoveList.options[i].value)); }
   board.flushBoard();
+  // 分析模式下跳转步骤后重启分析
+  if (board.analysisMode) startAnalysisEngine();
 }
 
 /* ---------- 引擎 PV 箭头：思考过程中显示将来两步 ---------- */
@@ -784,7 +790,14 @@ function updateToggleButtons() {
 
 function toggleCompRed() {
   stopEngineIfBusy();
-  board.compRed = !board.compRed;
+  // 如果当前在分析模式，退出分析模式
+  if (board.analysisMode) {
+    board.analysisMode = false;
+    board.compRed = !board._savedCompRed;
+    board.compBlack = board._savedCompBlack;
+  } else {
+    board.compRed = !board.compRed;
+  }
   updateToggleButtons();
   saveGameState();
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
@@ -793,7 +806,14 @@ function toggleCompRed() {
 
 function toggleCompBlack() {
   stopEngineIfBusy();
-  board.compBlack = !board.compBlack;
+  // 如果当前在分析模式，退出分析模式
+  if (board.analysisMode) {
+    board.analysisMode = false;
+    board.compRed = board._savedCompRed;
+    board.compBlack = !board._savedCompBlack;
+  } else {
+    board.compBlack = !board.compBlack;
+  }
   updateToggleButtons();
   saveGameState();
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
@@ -807,18 +827,27 @@ function toggleAnalysis() {
     board.compRed = board._savedCompRed;
     board.compBlack = board._savedCompBlack;
     board.analysisMode = false;
+    uciStatusEl.textContent = '引擎就绪';
   } else {
-    // 进入分析模式：保存当前状态，关闭电脑执棋
+    // 进入分析模式：保存当前状态，关闭电脑执棋，启动持续分析
     board._savedCompRed = board.compRed;
     board._savedCompBlack = board.compBlack;
     board.compRed = false;
     board.compBlack = false;
     board.analysisMode = true;
+    startAnalysisEngine();
   }
   updateToggleButtons();
   saveGameState();
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
-  else uciStatusEl.textContent = '引擎就绪';
+}
+
+/* 分析模式：向引擎发送 position fen + moves 后 go infinite */
+function startAnalysisEngine() {
+  if (!board.analysisMode || !pikafishSearch) return;
+  var posData = pikafishSearch._getFenWithMoves();
+  pikafishSearch.searchInfinite(posData.fen, posData.moves, posData.hasStartFen);
+  uciStatusEl.textContent = '分析中...';
 }
 
 /* ---------- 引擎初始化 ---------- */
@@ -932,6 +961,9 @@ function initEngine() {
           }
         }, 50);
       }
+    } else if (board.analysisMode) {
+      // 分析模式：启动持续分析
+      startAnalysisEngine();
     }
   }).catch(function(err) {
     document.getElementById('overlay').classList.add('hidden');
