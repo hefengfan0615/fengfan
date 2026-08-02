@@ -263,7 +263,6 @@ body {
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn-toggle" id="btnCompRed" onclick="toggleCompRed()">电脑执红</button>
         <button class="btn-toggle" id="btnCompBlack" onclick="toggleCompBlack()">电脑执黑</button>
-        <button class="btn-toggle" id="btnAnalysis" onclick="toggleAnalysis()">分析</button>
         <button class="btn-gear" id="settingsBtn">设置</button>
       </div>
     </div>
@@ -534,9 +533,6 @@ board.millis = 3000;
 board.computer = 1;          // 兼容 xqwlight，由 compRed/compBlack 驱动
 board.compRed = false;       // 电脑执红
 board.compBlack = true;      // 电脑执黑（默认）
-board.analysisMode = false;  // 分析模式
-board._savedCompRed = false; // 进入分析前保存的电脑执红状态
-board._savedCompBlack = true;// 进入分析前保存的电脑执黑状态
 board.displayFlipped = false;
 board.showArrows = true;
 
@@ -596,8 +592,6 @@ board.onAddMove = function() {
   catch (e) { selMoveList.add(createOption(text, value, true)); }
   selMoveList.scrollTop = selMoveList.scrollHeight;
   saveGameState();
-  // 分析模式下走棋后重新启动分析
-  if (board.analysisMode) startAnalysisEngine();
 };
 
 function createOption(text, value, ie8) {
@@ -637,8 +631,6 @@ function restart_click() {
   uciStatusEl.textContent = '引擎就绪';
   var evEl = document.getElementById('engineVersion');
   evEl.textContent = engineVersion + (evEl.dataset.simdFlag || '');
-  // 分析模式下重新开始后重启分析
-  if (board.analysisMode) startAnalysisEngine();
 }
 
 function retract_click() {
@@ -646,8 +638,6 @@ function retract_click() {
   board.retract();
   selMoveList.options.length = board.pos.mvList.length;
   selMoveList.selectedIndex = selMoveList.options.length - 1;
-  // 分析模式下悔棋后重启分析
-  if (board.analysisMode) startAnalysisEngine();
 }
 
 function moveList_change() {
@@ -657,8 +647,6 @@ function moveList_change() {
   if (from > to + 1) { for (var i = to + 1; i < from; i++) board.pos.undoMakeMove(); }
   else { for (var i = from; i <= to; i++) board.pos.makeMove(parseInt(selMoveList.options[i].value)); }
   board.flushBoard();
-  // 分析模式下跳转步骤后重启分析
-  if (board.analysisMode) startAnalysisEngine();
 }
 
 /* ---------- 引擎 PV 箭头：思考过程中显示将来两步 ---------- */
@@ -782,22 +770,13 @@ function stopEngineIfBusy() {
 function updateToggleButtons() {
   var btnRed = document.getElementById('btnCompRed');
   var btnBlack = document.getElementById('btnCompBlack');
-  var btnAnalysis = document.getElementById('btnAnalysis');
   if (btnRed) btnRed.className = 'btn-toggle' + (board.compRed ? ' on' : '');
   if (btnBlack) btnBlack.className = 'btn-toggle' + (board.compBlack ? ' on' : '');
-  if (btnAnalysis) btnAnalysis.className = 'btn-toggle' + (board.analysisMode ? ' on' : '');
 }
 
 function toggleCompRed() {
   stopEngineIfBusy();
-  // 如果当前在分析模式，退出分析模式
-  if (board.analysisMode) {
-    board.analysisMode = false;
-    board.compRed = !board._savedCompRed;
-    board.compBlack = board._savedCompBlack;
-  } else {
-    board.compRed = !board.compRed;
-  }
+  board.compRed = !board.compRed;
   updateToggleButtons();
   saveGameState();
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
@@ -806,48 +785,11 @@ function toggleCompRed() {
 
 function toggleCompBlack() {
   stopEngineIfBusy();
-  // 如果当前在分析模式，退出分析模式
-  if (board.analysisMode) {
-    board.analysisMode = false;
-    board.compRed = board._savedCompRed;
-    board.compBlack = !board._savedCompBlack;
-  } else {
-    board.compBlack = !board.compBlack;
-  }
+  board.compBlack = !board.compBlack;
   updateToggleButtons();
   saveGameState();
   if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
   else uciStatusEl.textContent = '引擎就绪';
-}
-
-function toggleAnalysis() {
-  stopEngineIfBusy();
-  if (board.analysisMode) {
-    // 退出分析模式：恢复之前保存的电脑执棋状态
-    board.compRed = board._savedCompRed;
-    board.compBlack = board._savedCompBlack;
-    board.analysisMode = false;
-    uciStatusEl.textContent = '引擎就绪';
-  } else {
-    // 进入分析模式：保存当前状态，关闭电脑执棋，启动持续分析
-    board._savedCompRed = board.compRed;
-    board._savedCompBlack = board.compBlack;
-    board.compRed = false;
-    board.compBlack = false;
-    board.analysisMode = true;
-    startAnalysisEngine();
-  }
-  updateToggleButtons();
-  saveGameState();
-  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
-}
-
-/* 分析模式：向引擎发送 position fen + moves 后 go infinite */
-function startAnalysisEngine() {
-  if (!board.analysisMode || !pikafishSearch) return;
-  var posData = pikafishSearch._getFenWithMoves();
-  pikafishSearch.searchInfinite(posData.fen, posData.moves, posData.hasStartFen);
-  uciStatusEl.textContent = '分析中...';
 }
 
 /* ---------- 引擎初始化 ---------- */
@@ -942,10 +884,6 @@ function initEngine() {
     uciStatusEl.textContent = '引擎就绪';
     if (board.computerMove()) {
       // 等待引擎版本信息（id name）被捕获后再开始搜索
-      // 原因：searchUci 会终止当前 worker 并创建新 worker，
-      //       新 worker 不会再输出 id name，若旧 worker 的 stdout
-      //       消息尚未被主线程处理则版本会永久丢失。
-      //       典型场景：在电脑思考时刷新页面，引擎很快被 searchUci 重建。
       var startResponse = function() {
         setTimeout(function() { board.response(); }, 200);
       };
@@ -955,15 +893,12 @@ function initEngine() {
         var verAttempts = 0;
         var verCheckTimer = setInterval(function() {
           verAttempts++;
-          if (engineVersion || verAttempts > 100) { // 最多等 5 秒
+          if (engineVersion || verAttempts > 100) {
             clearInterval(verCheckTimer);
             startResponse();
           }
         }, 50);
       }
-    } else if (board.analysisMode) {
-      // 分析模式：启动持续分析
-      startAnalysisEngine();
     }
   }).catch(function(err) {
     document.getElementById('overlay').classList.add('hidden');
@@ -1030,9 +965,6 @@ function saveGameState() {
     settings: {
       compRed: board.compRed,
       compBlack: board.compBlack,
-      analysisMode: board.analysisMode,
-      savedCompRed: board._savedCompRed,
-      savedCompBlack: board._savedCompBlack,
       millis: board.millis,
       sound: !!board.sound,
       animated: !!board.animated,
@@ -1055,9 +987,6 @@ function restoreGameState() {
     if (state.settings) {
       board.compRed = !!state.settings.compRed;
       board.compBlack = state.settings.compBlack !== false;
-      board.analysisMode = !!state.settings.analysisMode;
-      board._savedCompRed = !!state.settings.savedCompRed;
-      board._savedCompBlack = state.settings.savedCompBlack !== false;
       board.millis = state.settings.millis || 3000;
       board.setSound(state.settings.sound !== false);
       board.animated = state.settings.animated !== false;
