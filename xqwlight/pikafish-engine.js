@@ -511,7 +511,7 @@ PikafishUciSearch.prototype.stopEngine = function() {
   }
 };
 
-/* 分析模式：发送 position fen + moves 后 go infinite，持续分析不返回走法 */
+/* 分析模式：发送 position fen + moves 后 go movetime 长时间搜索，持续分析不返回走法 */
 PikafishUciSearch.prototype.searchInfinite = function(fen, movesList, hasStartFen) {
   var self = this;
 
@@ -535,7 +535,8 @@ PikafishUciSearch.prototype.searchInfinite = function(fen, movesList, hasStartFe
     posCmd += " moves " + movesList.join(" ");
   }
   commands.push(posCmd);
-  commands.push("go infinite");
+  // 使用 go movetime 长时间搜索，避免 go infinite 导致 WASM 永久阻塞 Worker 线程
+  commands.push("go movetime 3600000");
 
   if (self.onUciStdout) {
     var debugMoves = (hasStartFen && movesList && movesList.length > 0) ? movesList.join(',') : '无';
