@@ -104,9 +104,6 @@ function PikafishUciSearch(pos, hashLevel) {
   // 持久引擎：Worker 常驻，每个搜索通过 searchId 追踪
   this._currentSearchId = 0;
   this._pendingSearch = null;  // { resolve, reject, searchId, timeoutId }
-  // 分析模式
-  this._analyzing = false;
-  this._analysisSearchId = 0;
 }
 
 /* 设置开局 FEN */
@@ -226,10 +223,6 @@ PikafishUciSearch.prototype.startEngine = function() {
           break;
 
         case 'done':
-          // 分析模式：自动重新开始下一轮分析
-          if (self._analyzing && msg.searchId === self._analysisSearchId) {
-            self._restartAnalysisChunk();
-          }
           // 只处理当前活跃搜索的 done 消息
           if (self._pendingSearch && msg.searchId === self._pendingSearch.searchId) {
             var ps = self._pendingSearch;
@@ -516,61 +509,4 @@ PikafishUciSearch.prototype.stopEngine = function() {
   if (self.worker && self.engineReady) {
     self.worker.postMessage({ type: 'stop' });
   }
-};
-
-/* ---------- 分析模式：持续分析（go movetime 循环） ---------- */
-
-/* 启动分析：持续发送 go movetime 分析命令，完成后自动重启下一轮 */
-PikafishUciSearch.prototype.startAnalysis = function() {
-  var self = this;
-  if (self._analyzing) return;
-  self._analyzing = true;
-
-  // 清理任何正在进行的普通搜索
-  if (self._pendingSearch) {
-    var prev = self._pendingSearch;
-    self._pendingSearch = null;
-    if (prev.timeoutId) clearTimeout(prev.timeoutId);
-    try { prev.reject(new Error('__superseded__')); } catch (e) {}
-  }
-
-  self._runAnalysisChunk();
-};
-
-/* 停止分析 */
-PikafishUciSearch.prototype.stopAnalysis = function() {
-  this._analyzing = false;
-  // 发送 stop 给引擎，让当前正在进行的分析搜索尽快结束
-  if (this.worker && this.engineReady) {
-    this.worker.postMessage({ type: 'stop' });
-  }
-};
-
-/* 发送一轮分析搜索命令 */
-PikafishUciSearch.prototype._runAnalysisChunk = function() {
-  var self = this;
-  if (!self._analyzing || !self.worker || !self.engineReady) return;
-
-  self._analysisSearchId = ++self._currentSearchId;
-
-  var posData = self._getFenWithMoves();
-  var commands = [];
-  var posCmd = "position fen " + posData.fen;
-  if (posData.hasStartFen && posData.moves && posData.moves.length > 0) {
-    posCmd += " moves " + posData.moves.join(" ");
-  }
-  commands.push(posCmd);
-  commands.push("go movetime 10000");
-
-  self.worker.postMessage({
-    type: 'search',
-    commands: commands,
-    searchId: self._analysisSearchId
-  });
-};
-
-/* 当一轮分析搜索完成后，自动重启下一轮 */
-PikafishUciSearch.prototype._restartAnalysisChunk = function() {
-  if (!this._analyzing) return;
-  this._runAnalysisChunk();
 };

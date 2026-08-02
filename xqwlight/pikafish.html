@@ -55,15 +55,6 @@ body {
 .btn-toggle.on:hover {
   background: #2a4a7b;
 }
-.btn-toggle.analyze {
-  background: #fff; color: #888;
-}
-.btn-toggle.analyze.on {
-  background: #2e7d32; color: #fff; border-color: #2e7d32;
-}
-.btn-toggle.analyze.on:hover {
-  background: #388e3c;
-}
 
 /* ---- 棋盘 ---- */
 .board-section {
@@ -272,7 +263,6 @@ body {
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn-toggle" id="btnCompRed" onclick="toggleCompRed()">电脑执红</button>
         <button class="btn-toggle" id="btnCompBlack" onclick="toggleCompBlack()">电脑执黑</button>
-        <button class="btn-toggle analyze" id="btnAnalyze" onclick="toggleAnalyze()">分析</button>
         <button class="btn-gear" id="settingsBtn">设置</button>
       </div>
     </div>
@@ -618,14 +608,6 @@ function restart_click() {
   selMoveList.options.length = 1;
   selMoveList.selectedIndex = 0;
 
-  // 停止分析模式
-  if (analyzing) {
-    analyzing = false;
-    if (pikafishSearch) {
-      pikafishSearch.stopAnalysis();
-    }
-  }
-
   // 引擎思考中点击重新开始：强制终止当前搜索，重建 Worker
   if (board.busy) {
     board.busy = false;
@@ -778,7 +760,7 @@ settingsOverlay.addEventListener('click', function(e) {
   if (e.target === settingsOverlay) { settingsOverlay.classList.remove('open'); _settingsOpen = false; }
 });
 
-/* ---------- 顶栏切换按钮：电脑执红 / 电脑执黑 / 分析 ---------- */
+/* ---------- 顶栏切换按钮：电脑执红 / 电脑执黑 ---------- */
 function stopEngineIfBusy() {
   if (board.busy && pikafishSearch && pikafishSearch.stopEngine) {
     pikafishSearch.stopEngine();
@@ -800,44 +782,9 @@ function updateToggleButtons() {
   var btnBlack = document.getElementById('btnCompBlack');
   if (btnRed) btnRed.className = 'btn-toggle' + (board.compRed ? ' on' : '');
   if (btnBlack) btnBlack.className = 'btn-toggle' + (board.compBlack ? ' on' : '');
-  updateAnalyzeButton();
-}
-
-var analyzing = false;
-
-function updateAnalyzeButton() {
-  var btn = document.getElementById('btnAnalyze');
-  if (btn) btn.className = 'btn-toggle analyze' + (analyzing ? ' on' : '');
-}
-
-function toggleAnalyze() {
-  if (!pikafishSearch || !pikafishSearch.engineReady) {
-    uciStatusEl.textContent = '引擎未就绪';
-    return;
-  }
-  if (analyzing) {
-    // 停止分析
-    pikafishSearch.stopAnalysis();
-    board.busy = false;
-    board.thinking.style.visibility = "hidden";
-    board.clearArrows();
-    uciStatusEl.textContent = '引擎就绪';
-    analyzing = false;
-    updateAnalyzeButton();
-  } else {
-    // 如果引擎正在思考（电脑走棋），先停止
-    stopEngineIfBusy();
-    board.busy = true;
-    board.thinking.style.visibility = "visible";
-    uciStatusEl.textContent = '分析中...';
-    analyzing = true;
-    updateAnalyzeButton();
-    pikafishSearch.startAnalysis();
-  }
 }
 
 function toggleCompRed() {
-  if (analyzing) { toggleAnalyze(); }
   stopEngineIfBusy();
   board.compRed = !board.compRed;
   updateToggleButtons();
@@ -847,7 +794,6 @@ function toggleCompRed() {
 }
 
 function toggleCompBlack() {
-  if (analyzing) { toggleAnalyze(); }
   stopEngineIfBusy();
   board.compBlack = !board.compBlack;
   updateToggleButtons();
