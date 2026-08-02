@@ -574,13 +574,13 @@ function updateMemoryViews() {
   HEAP8 = new Int8Array(b);
   HEAP16 = new Int16Array(b);
   HEAPU8 = new Uint8Array(b);
-  HEAPU16 = new Uint16Array(b);
+  
   HEAP32 = new Int32Array(b);
   HEAPU32 = new Uint32Array(b);
-  HEAPF32 = new Float32Array(b);
-  HEAPF64 = new Float64Array(b);
+  
+  
   HEAP64 = new BigInt64Array(b);
-  HEAPU64 = new BigUint64Array(b);
+  
 }
 
 // include: memoryprofiler.js
@@ -834,35 +834,14 @@ async function createWasm() {
       }
     }
 
-  /** @type {!Int16Array} */
-  var HEAP16;
-
   /** @type {!Int32Array} */
   var HEAP32;
-
-  /** not-@type {!BigInt64Array} */
-  var HEAP64;
 
   /** @type {!Int8Array} */
   var HEAP8;
 
-  /** @type {!Float32Array} */
-  var HEAPF32;
-
-  /** @type {!Float64Array} */
-  var HEAPF64;
-
-  /** @type {!Uint16Array} */
-  var HEAPU16;
-
   /** @type {!Uint32Array} */
   var HEAPU32;
-
-  /** not-@type {!BigUint64Array} */
-  var HEAPU64;
-
-  /** @type {!Uint8Array} */
-  var HEAPU8;
 
   var callRuntimeCallbacks = (callbacks) => {
       while (callbacks.length > 0) {
@@ -877,26 +856,6 @@ async function createWasm() {
   var addOnPreRun = (cb) => onPreRuns.push(cb);
 
 
-  
-    /**
-   * @param {number} ptr
-   * @param {string} type
-   */
-  function getValue(ptr, type = 'i8') {
-    if (type.endsWith('*')) type = '*';
-    switch (type) {
-      case 'i1': return HEAP8[ptr];
-      case 'i8': return HEAP8[ptr];
-      case 'i16': return HEAP16[((ptr)>>1)];
-      case 'i32': return HEAP32[((ptr)>>2)];
-      case 'i64': return HEAP64[((ptr)>>3)];
-      case 'float': return HEAPF32[((ptr)>>2)];
-      case 'double': return HEAPF64[((ptr)>>3)];
-      case '*': return HEAPU32[((ptr)>>2)];
-      default: abort(`invalid type for getValue: ${type}`);
-    }
-  }
-
   var noExitRuntime = true;
 
   function ptrToString(ptr) {
@@ -905,27 +864,6 @@ async function createWasm() {
       ptr >>>= 0;
       return '0x' + ptr.toString(16).padStart(8, '0');
     }
-
-  
-    /**
-   * @param {number} ptr
-   * @param {number} value
-   * @param {string} type
-   */
-  function setValue(ptr, value, type = 'i8') {
-    if (type.endsWith('*')) type = '*';
-    switch (type) {
-      case 'i1': HEAP8[ptr] = value; break;
-      case 'i8': HEAP8[ptr] = value; break;
-      case 'i16': HEAP16[((ptr)>>1)] = value; break;
-      case 'i32': HEAP32[((ptr)>>2)] = value; break;
-      case 'i64': HEAP64[((ptr)>>3)] = BigInt(value); break;
-      case 'float': HEAPF32[((ptr)>>2)] = value; break;
-      case 'double': HEAPF64[((ptr)>>3)] = value; break;
-      case '*': HEAPU32[((ptr)>>2)] = value; break;
-      default: abort(`invalid type for setValue: ${type}`);
-    }
-  }
 
   var stackRestore = (val) => __emscripten_stack_restore(val);
 
@@ -1417,6 +1355,8 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   };
   
   
+  /** @type {!Uint8Array} */
+  var HEAPU8;
   var zeroMemory = (ptr, size) => HEAPU8.fill(0, ptr, ptr + size);
   
   var alignMemory = (size, alignment) => {
@@ -1429,6 +1369,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       if (ptr) zeroMemory(ptr, size);
       return ptr;
     };
+  
   var MEMFS = {
   ops_table:null,
   mount(mount) {
@@ -1572,7 +1513,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
           return attr;
         },
   setattr(node, attr) {
-          for (const key of ["mode", "atime", "mtime", "ctime"]) {
+          for (const key of ['mode', 'atime', 'mtime', 'ctime']) {
             if (attr[key] != null) {
               node[key] = attr[key];
             }
@@ -1760,6 +1701,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       if (canWrite) mode |= 146;
       return mode;
     };
+  
   
   
   
@@ -2034,6 +1976,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   var FS_createPreloadedFile = (parent, name, url, canRead, canWrite, onload, onerror, dontCreateFile, canOwn, preFinish) => {
       FS_preloadFile(parent, name, url, canRead, canWrite, dontCreateFile, canOwn, preFinish).then(onload).catch(onerror);
     };
+  
   var FS = {
   root:null,
   mounts:[],
@@ -3025,7 +2968,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
         });
       },
   open(path, flags, mode = 0o666) {
-        if (path === "") {
+        if (path === '') {
           throw new FS.ErrnoError(44);
         }
         flags = FS_modeStringToFlags(flags);
@@ -3039,7 +2982,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
         if (typeof path == 'object') {
           node = path;
         } else {
-          isDirPath = path.endsWith("/");
+          isDirPath = path.endsWith('/');
           // noent_okay makes it so that if the final component of the path
           // doesn't exist, lookupPath returns `node: undefined`. `path` will be
           // updated to point to the target of all symlinks.
@@ -3562,7 +3505,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   forceLoadFile(obj) {
         if (obj.isDevice || obj.isFolder || obj.link || obj.contents) return true;
         if (globalThis.XMLHttpRequest) {
-          abort("Lazy loading should have been performed (contents set) in createLazyFile, but it was not. Lazy loading only works in web workers. Use --embed-file or --preload-file in emcc on the main thread.");
+          abort('Lazy loading should have been performed (contents set) in createLazyFile, but it was not. Lazy loading only works in web workers. Use --embed-file or --preload-file in emcc on the main thread.');
         } else { // Command-line.
           try {
             obj.contents = readBinary(obj.url);
@@ -3593,11 +3536,11 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
             var xhr = new XMLHttpRequest();
             xhr.open('HEAD', url, false);
             xhr.send(null);
-            if (!(xhr.status >= 200 && xhr.status < 300 || xhr.status === 304)) abort("Couldn't load " + url + ". Status: " + xhr.status);
-            var datalength = Number(xhr.getResponseHeader("Content-length"));
+            if (!(xhr.status >= 200 && xhr.status < 300 || xhr.status === 304)) abort(`Couldn't load ${url}. Status: ${xhr.status}`);
+            var datalength = Number(xhr.getResponseHeader('Content-length'));
             var header;
-            var hasByteServing = (header = xhr.getResponseHeader("Accept-Ranges")) && header === "bytes";
-            var usesGzip = (header = xhr.getResponseHeader("Content-Encoding")) && header === "gzip";
+            var hasByteServing = (header = xhr.getResponseHeader('Accept-Ranges')) && header === 'bytes';
+            var usesGzip = (header = xhr.getResponseHeader('Content-Encoding')) && header === 'gzip';
   
             var chunkSize = 1024*1024; // Chunk size in bytes
   
@@ -3611,7 +3554,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
               // TODO: Use mozResponseArrayBuffer, responseStream, etc. if available.
               var xhr = new XMLHttpRequest();
               xhr.open('GET', url, false);
-              if (datalength !== chunkSize) xhr.setRequestHeader("Range", "bytes=" + from + "-" + to);
+              if (datalength !== chunkSize) xhr.setRequestHeader('Range', `bytes=${from}-${to}`);
   
               // Some hints to the browser that we want binary data.
               xhr.responseType = 'arraybuffer';
@@ -3620,7 +3563,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
               }
   
               xhr.send(null);
-              if (!(xhr.status >= 200 && xhr.status < 300 || xhr.status === 304)) abort("Couldn't load " + url + ". Status: " + xhr.status);
+              if (!(xhr.status >= 200 && xhr.status < 300 || xhr.status === 304)) abort(`Couldn't load ${url}. Status: ${xhr.status}`);
               if (xhr.response !== undefined) {
                 return new Uint8Array(/** @type{Array<number>} */(xhr.response || []));
               }
@@ -3643,7 +3586,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
               chunkSize = datalength = 1; // this will force getter(0)/doXHR do download the whole file
               datalength = this.getter(0).length;
               chunkSize = datalength;
-              out("LazyFiles on gzip forces download of the whole file when length is accessed");
+              out('LazyFiles on gzip forces download of the whole file when length is accessed');
             }
   
             this._length = datalength;
@@ -3733,6 +3676,12 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       },
   };
   
+  
+  
+  
+  
+  /** not-@type {!BigInt64Array} */
+  var HEAP64;
   var SYSCALLS = {
   currentUmask:18,
   calculateAt(dirfd, path, allowEmpty) {
@@ -3859,6 +3808,9 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   var syscallGetVarargP = syscallGetVarargI;
   
   
+  
+  /** @type {!Int16Array} */
+  var HEAP16;
   function ___syscall_fcntl64(fd, cmd, varargs) {
   SYSCALLS.varargs = varargs;
   try {
@@ -3939,6 +3891,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   }
 
   
+  
   var stringToUTF8 = (str, outPtr, maxBytesToWrite) => {
       assert(typeof maxBytesToWrite == 'number', 'stringToUTF8 requires a third parameter that specifies the length of the output buffer');
       return stringToUTF8Array(str, HEAPU8, outPtr, maxBytesToWrite);
@@ -3959,6 +3912,9 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   }
   
 
+  
+  
+  
   
   function ___syscall_getdents64(fd, dirp, count) {
   try {
@@ -4020,6 +3976,9 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   }
   
 
+  
+  
+  
   
   function ___syscall_ioctl(fd, op, varargs) {
   SYSCALLS.varargs = varargs;
@@ -4212,6 +4171,8 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   
   
   
+  
+  
   function __mmap_js(len, prot, flags, fd, offset, allocated, addr) {
     offset = bigintToI53Checked(offset);
   
@@ -4253,6 +4214,8 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   }
 
   
+  
+  
   var __tzset_js = (timezone, daylight, std_name, dst_name) => {
       // TODO: Use (malleable) environment variables instead of system settings.
       var currentYear = new Date().getFullYear();
@@ -4281,11 +4244,11 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       var extractZone = (timezoneOffset) => {
         // Why inverse sign?
         // Read here https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
-        var sign = timezoneOffset >= 0 ? "-" : "+";
+        var sign = timezoneOffset >= 0 ? '-' : '+';
   
         var absOffset = Math.abs(timezoneOffset)
-        var hours = String(Math.floor(absOffset / 60)).padStart(2, "0");
-        var minutes = String(absOffset % 60).padStart(2, "0");
+        var hours = String(Math.floor(absOffset / 60)).padStart(2, '0');
+        var minutes = String(absOffset % 60).padStart(2, '0');
   
         return `UTC${sign}${hours}${minutes}`;
       }
@@ -4313,6 +4276,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   var nowIsMonotonic = 1;
   
   var checkWasiClock = (clock_id) => clock_id >= 0 && clock_id <= 3;
+  
   
   function _clock_time_get(clk_id, ignored_precision, ptime) {
     ignored_precision = bigintToI53Checked(ignored_precision);
@@ -4358,9 +4322,10 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       } catch(e) {
         err(`growMemory: Attempted to grow heap from ${oldHeapSize} bytes to ${size} bytes, but got error: ${e}`);
       }
-      // implicit 0 return to save code size (caller will cast "undefined" into 0
+      // implicit 0 return to save code size (caller will cast 'undefined' into 0
       // anyhow)
     };
+  
   var _emscripten_resize_heap = (requestedSize) => {
       var oldSize = HEAPU8.length;
       // With CAN_ADDRESS_2GB or MEMORY64, pointers are already unsigned.
@@ -4448,6 +4413,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       return getEnvStrings.strings;
     };
   
+  
   var _environ_get = (__environ, environ_buf) => {
       var bufSize = 0;
       var envp = 0;
@@ -4460,6 +4426,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       return 0;
     };
 
+  
   
   var _environ_sizes_get = (penviron_count, penviron_buf_size) => {
       var strings = getEnvStrings();
@@ -4513,6 +4480,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   }
   
 
+  
   /** @param {number=} offset */
   var doReadv = (stream, iov, iovcnt, offset) => {
       var ret = 0;
@@ -4542,6 +4510,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       return ret;
     };
   
+  
   function _fd_read(fd, iov, iovcnt, pnum) {
   try {
   
@@ -4556,6 +4525,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   }
   
 
+  
   
   function _fd_seek(fd, offset, whence, newOffset) {
     offset = bigintToI53Checked(offset);
@@ -4576,6 +4546,8 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
   ;
   }
 
+  
+  
   /** @param {number=} offset */
   var doWritev = (stream, iov, iovcnt, offset) => {
       // Gather all iovecs into one contiguous buffer and issue a single
@@ -4600,6 +4572,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       }
       return FS.write(stream, view, 0, total, offset);
     };
+  
   
   function _fd_write(fd, iov, iovcnt, pnum) {
   try {
@@ -4644,6 +4617,7 @@ var UTF8Decoder = globalThis.TextDecoder && new TextDecoder();
       stringToUTF8(str, ret, size);
       return ret;
     };
+
 
   var getCFunc = (ident) => {
       var func = Module['_' + ident]; // closure exported function
@@ -4827,6 +4801,8 @@ if (Module['printErr']) err = Module['printErr'];
   'getFunctionAddress',
   'addFunction',
   'removeFunction',
+  'setValue',
+  'getValue',
   'intArrayToString',
   'AsciiToString',
   'stringToAscii',
@@ -4931,9 +4907,6 @@ if (Module['printErr']) err = Module['printErr'];
   'writeGLArray',
   'registerWebGlEventCallback',
   'runAndAbortIfError',
-  'ALLOC_NORMAL',
-  'ALLOC_STACK',
-  'allocate',
   'writeStringToMemory',
   'writeAsciiToMemory',
   'allocateUTF8',
@@ -5000,8 +4973,6 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'ccall',
   'freeTableIndexes',
   'functionsInTableMap',
-  'setValue',
-  'getValue',
   'PATH',
   'PATH_FS',
   'UTF8Decoder',
@@ -5034,7 +5005,6 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'exceptionCaught',
   'Browser',
   'requestFullscreen',
-  'requestFullScreen',
   'setCanvasSize',
   'getUserMedia',
   'createContext',
