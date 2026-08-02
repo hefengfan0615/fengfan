@@ -70,6 +70,12 @@ self.onmessage = function(ev) {
       processSearch(m.commands, m.searchId);
       break;
 
+    case 'stop':
+      if (engineReady) {
+        try { feedCommand("stop"); } catch(e) {}
+      }
+      break;
+
     case 'quit':
       if (engineReady) {
         try { feedCommand("quit"); } catch(e) {}

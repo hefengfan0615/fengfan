@@ -38,9 +38,23 @@ body {
   background: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
   padding: 6px 14px; color: #1a3a6b;
   box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  transition: background .15s;
+  transition: background .15s, color .15s;
 }
 .btn-gear:hover { background: #e8f0fe; }
+.btn-toggle {
+  border: none; border-radius: 8px;
+  background: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  padding: 6px 12px; color: #888;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  transition: background .15s, color .15s;
+}
+.btn-toggle:hover { background: #e8f0fe; color: #1a3a6b; }
+.btn-toggle.on {
+  background: #1a3a6b; color: #fff;
+}
+.btn-toggle.on:hover {
+  background: #2a4a7b;
+}
 
 /* ---- 棋盘 ---- */
 .board-section {
@@ -246,7 +260,12 @@ body {
     <!-- 顶栏 -->
     <div class="header-bar">
       <h1>丰 帆 象 棋 </h1>
-      <button class="btn-gear" id="settingsBtn">设置</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn-toggle" id="btnCompRed" onclick="toggleCompRed()">电脑执红</button>
+        <button class="btn-toggle" id="btnCompBlack" onclick="toggleCompBlack()">电脑执黑</button>
+        <button class="btn-toggle" id="btnAnalysis" onclick="toggleAnalysis()">分析</button>
+        <button class="btn-gear" id="settingsBtn">设置</button>
+      </div>
     </div>
 
     <!-- 主区域 -->
@@ -287,15 +306,6 @@ body {
     <div class="settings-overlay" id="settingsOverlay">
       <div class="settings-panel">
         <h2>设置</h2>
-
-        <div class="setting-row">
-          <span class="label">电脑执红</span>
-          <span class="toggle" id="compRedToggle" onclick="pendCompRed()"></span>
-        </div>
-        <div class="setting-row">
-          <span class="label">电脑执黑</span>
-          <span class="toggle on" id="compBlackToggle" onclick="pendCompBlack()"></span>
-        </div>
 
         <div class="setting-row">
           <span class="label">思考时间</span>
@@ -524,6 +534,9 @@ board.millis = 3000;
 board.computer = 1;          // 兼容 xqwlight，由 compRed/compBlack 驱动
 board.compRed = false;       // 电脑执红
 board.compBlack = true;      // 电脑执黑（默认）
+board.analysisMode = false;  // 分析模式
+board._savedCompRed = false; // 进入分析前保存的电脑执红状态
+board._savedCompBlack = true;// 进入分析前保存的电脑执黑状态
 board.displayFlipped = false;
 board.showArrows = true;
 
@@ -677,8 +690,6 @@ function openSettings() {
   // 保存当前状态到 _pending（UI 只反映 _pending）
   _originalFen = board.pos.toFen();
   _pending = {
-    compRed: board.compRed,
-    compBlack: board.compBlack,
     millis: board.millis,
     sound: !!board.sound,
     animated: !!board.animated,
@@ -686,8 +697,6 @@ function openSettings() {
     fen: _originalFen
   };
   // 同步 UI 到 _pending
-  document.getElementById('compRedToggle').className = 'toggle' + (_pending.compRed ? ' on' : '');
-  document.getElementById('compBlackToggle').className = 'toggle' + (_pending.compBlack ? ' on' : '');
   document.getElementById('timeSlider').value = (_pending.millis / 1000).toFixed(1);
   document.getElementById('timeDisplay').textContent = (_pending.millis / 1000).toFixed(1);
   document.getElementById('soundToggle').className = 'toggle' + (_pending.sound ? ' on' : '');
@@ -700,14 +709,6 @@ function openSettings() {
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
 
 // 暂存修改函数（仅改 _pending + UI，不动 board）
-function pendCompRed() {
-  _pending.compRed = !_pending.compRed;
-  document.getElementById('compRedToggle').classList.toggle('on');
-}
-function pendCompBlack() {
-  _pending.compBlack = !_pending.compBlack;
-  document.getElementById('compBlackToggle').classList.toggle('on');
-}
 function pendThinkTime(val) {
   _pending.millis = Math.round(parseFloat(val) * 1000);
   document.getElementById('timeDisplay').textContent = parseFloat(val).toFixed(1);
@@ -730,8 +731,6 @@ function pendFen(val) {
 
 // 确定：应用修改 → 重启对局
 document.getElementById('settingsOk').addEventListener('click', function() {
-  board.compRed = _pending.compRed;
-  board.compBlack = _pending.compBlack;
   board.millis = _pending.millis;
   board.setSound(_pending.sound);
   board.animated = _pending.animated;
@@ -766,6 +765,61 @@ document.getElementById('settingsCancel').addEventListener('click', function() {
 settingsOverlay.addEventListener('click', function(e) {
   if (e.target === settingsOverlay) { settingsOverlay.classList.remove('open'); _settingsOpen = false; }
 });
+
+/* ---------- 顶栏切换按钮：电脑执红 / 电脑执黑 / 分析 ---------- */
+function stopEngineIfBusy() {
+  if (board.busy && pikafishSearch && pikafishSearch.stopEngine) {
+    pikafishSearch.stopEngine();
+  }
+}
+
+function updateToggleButtons() {
+  var btnRed = document.getElementById('btnCompRed');
+  var btnBlack = document.getElementById('btnCompBlack');
+  var btnAnalysis = document.getElementById('btnAnalysis');
+  if (btnRed) btnRed.className = 'btn-toggle' + (board.compRed ? ' on' : '');
+  if (btnBlack) btnBlack.className = 'btn-toggle' + (board.compBlack ? ' on' : '');
+  if (btnAnalysis) btnAnalysis.className = 'btn-toggle' + (board.analysisMode ? ' on' : '');
+}
+
+function toggleCompRed() {
+  stopEngineIfBusy();
+  board.compRed = !board.compRed;
+  updateToggleButtons();
+  saveGameState();
+  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
+  else uciStatusEl.textContent = '引擎就绪';
+}
+
+function toggleCompBlack() {
+  stopEngineIfBusy();
+  board.compBlack = !board.compBlack;
+  updateToggleButtons();
+  saveGameState();
+  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
+  else uciStatusEl.textContent = '引擎就绪';
+}
+
+function toggleAnalysis() {
+  stopEngineIfBusy();
+  if (board.analysisMode) {
+    // 退出分析模式：恢复之前保存的电脑执棋状态
+    board.compRed = board._savedCompRed;
+    board.compBlack = board._savedCompBlack;
+    board.analysisMode = false;
+  } else {
+    // 进入分析模式：保存当前状态，关闭电脑执棋
+    board._savedCompRed = board.compRed;
+    board._savedCompBlack = board.compBlack;
+    board.compRed = false;
+    board.compBlack = false;
+    board.analysisMode = true;
+  }
+  updateToggleButtons();
+  saveGameState();
+  if (board.computerMove()) setTimeout(function() { board.response(); }, 200);
+  else uciStatusEl.textContent = '引擎就绪';
+}
 
 /* ---------- 引擎初始化 ---------- */
 var pikafishSearch = null;
@@ -853,6 +907,7 @@ function initEngine() {
     // 还原缓存状态，无缓存则用默认开局
     if (!restoreGameState()) {
       board.restart(STARTUP_FEN[0]);
+      updateToggleButtons();
     }
     document.getElementById('overlay').classList.add('hidden');
     uciStatusEl.textContent = '引擎就绪';
@@ -890,7 +945,7 @@ window.addEventListener('load', function() {
   initEngine();
   setupServiceWorker();
   document.getElementById('timeDisplay').textContent = '3.0';
-  document.getElementById('compBlackToggle').classList.add('on');
+  updateToggleButtons();
 });
 
 /* ---------- Service Worker ---------- */
@@ -943,6 +998,9 @@ function saveGameState() {
     settings: {
       compRed: board.compRed,
       compBlack: board.compBlack,
+      analysisMode: board.analysisMode,
+      savedCompRed: board._savedCompRed,
+      savedCompBlack: board._savedCompBlack,
       millis: board.millis,
       sound: !!board.sound,
       animated: !!board.animated,
@@ -965,6 +1023,9 @@ function restoreGameState() {
     if (state.settings) {
       board.compRed = !!state.settings.compRed;
       board.compBlack = state.settings.compBlack !== false;
+      board.analysisMode = !!state.settings.analysisMode;
+      board._savedCompRed = !!state.settings.savedCompRed;
+      board._savedCompBlack = state.settings.savedCompBlack !== false;
       board.millis = state.settings.millis || 3000;
       board.setSound(state.settings.sound !== false);
       board.animated = state.settings.animated !== false;
@@ -996,6 +1057,7 @@ function restoreGameState() {
     }
     selMoveList.selectedIndex = selMoveList.options.length - 1;
     board.flushBoard();
+    updateToggleButtons();
     return true;
   } catch (e) {
     try { localStorage.removeItem(STORAGE_KEY); } catch (e2) {}

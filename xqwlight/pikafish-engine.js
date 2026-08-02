@@ -502,3 +502,11 @@ PikafishUciSearch.prototype.searchMain = function(depth, millis, callback) {
     }
   });
 };
+
+/* 向引擎发送 stop 命令，终止当前搜索 */
+PikafishUciSearch.prototype.stopEngine = function() {
+  var self = this;
+  if (self.worker && self.engineReady) {
+    self.worker.postMessage({ type: 'stop' });
+  }
+};
