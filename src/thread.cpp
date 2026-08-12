@@ -55,6 +55,8 @@ Thread::Thread(Search::SharedState&                    sharedState,
     totalNuma(totalNumaCount),
     nthreads(sharedState.options["Threads"])
 #ifdef WASM_SINGLE_THREAD
+    ,
+    stdThread()
 {
     // WASM single-threaded: no native thread, allocate worker directly on main thread
     searching = false;
