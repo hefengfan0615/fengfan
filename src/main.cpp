@@ -43,13 +43,30 @@ __attribute__((used))  // keep main alive
 int main(int argc, char* argv[]) {
     std::cout << engine_info() << std::endl;
 
+#ifdef WASM_SINGLE_THREAD
+    std::cout << "info string WASM engine initializing..." << std::endl;
+#endif
+
     Attacks::init();
+
+#ifdef WASM_SINGLE_THREAD
+    std::cout << "info string Attacks init done" << std::endl;
+#endif
+
     Position::init();
+
+#ifdef WASM_SINGLE_THREAD
+    std::cout << "info string Position init done" << std::endl;
+#endif
 
     auto cli = CommandLine(argc, argv);
     auto uci = std::make_unique<UCIEngine>(std::move(cli));
 
     Tune::init(uci->engine_options());
+
+#ifdef WASM_SINGLE_THREAD
+    std::cout << "info string Entering UCI loop..." << std::endl;
+#endif
 
     uci->loop();
 
