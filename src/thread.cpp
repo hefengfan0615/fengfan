@@ -53,7 +53,17 @@ Thread::Thread(Search::SharedState&                    sharedState,
     idx(n),
     idxInNuma(numaN),
     totalNuma(totalNumaCount),
-    nthreads(sharedState.options["Threads"]),
+    nthreads(sharedState.options["Threads"])
+#ifdef WASM_SINGLE_THREAD
+{
+    // WASM single-threaded: no native thread, allocate worker directly on main thread
+    searching = false;
+    this->numaAccessToken = binder();
+    this->worker          = make_unique_large_page<Search::Worker>(
+      sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
+}
+#else
+    ,
     stdThread(&Thread::idle_loop, this) {
 
     wait_for_search_finished();
@@ -69,6 +79,7 @@ Thread::Thread(Search::SharedState&                    sharedState,
 
     wait_for_search_finished();
 }
+#endif
 
 
 // Destructor wakes up the thread in idle_loop() and waits
@@ -79,7 +90,9 @@ Thread::~Thread() {
 
     exit = true;
     start_searching();
+#ifndef WASM_SINGLE_THREAD
     stdThread.join();
+#endif
 }
 
 // Wakes up the thread that will start the search
@@ -96,13 +109,17 @@ void Thread::clear_worker() {
 
 // Blocks on the condition variable until the thread has finished searching
 void Thread::wait_for_search_finished() {
-
+#ifndef WASM_SINGLE_THREAD
     std::unique_lock<std::mutex> lk(mutex);
     cv.wait(lk, [&] { return !searching; });
+#else
+    searching = false;
+#endif
 }
 
 // Launching a function in the thread
 void Thread::run_custom_job(std::function<void()> f) {
+#ifndef WASM_SINGLE_THREAD
     {
         std::unique_lock<std::mutex> lk(mutex);
         cv.wait(lk, [&] { return !searching; });
@@ -110,6 +127,9 @@ void Thread::run_custom_job(std::function<void()> f) {
         searching = true;
     }
     cv.notify_one();
+#else
+    f();
+#endif
 }
 
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }

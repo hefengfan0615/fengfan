@@ -36,8 +36,9 @@
 #include <utility>
 #include <variant>
 
-#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__) || defined(__FreeBSD__) \
-  || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#if ((defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__) || defined(__FreeBSD__) \
+  || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)) \
+  && !defined(WASM_SINGLE_THREAD)
     #define USE_UNIX_SHM
     #include "shm_unix.h"
 #endif
