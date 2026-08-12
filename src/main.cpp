@@ -57,6 +57,7 @@ int main(int argc, char* argv[]) {
 }
 
 #ifdef WASM_SINGLE_THREAD
+extern "C" {
 EMSCRIPTEN_KEEPALIVE
 void wasm_uci_execute() {
     static auto cli = CommandLine(0, nullptr);
@@ -65,6 +66,7 @@ void wasm_uci_execute() {
     Tune::init(uci->engine_options());
 
     uci->loop();
+}
 }
 #endif
 
