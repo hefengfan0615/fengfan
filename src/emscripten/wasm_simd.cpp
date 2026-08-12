@@ -5,7 +5,7 @@
 
 namespace emscripten_wasm_simd {
 
-constexpr int L0 = ::Stockfish::Eval::NNUE::TransformedFeatureDimensionsBig;
+constexpr int L0 = ::Stockfish::Eval::NNUE::NetworkArchitecture::TransformedFeatureDimensions;
 
 //
 // Dot product of two SIMD vectors
