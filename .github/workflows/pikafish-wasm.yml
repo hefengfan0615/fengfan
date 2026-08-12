@@ -7,7 +7,7 @@ on:
   workflow_dispatch: 
 env:
   EMSDK_PATH: /tmp/emsdk
-  NNUE_URL: https://github.com/official-pikafish/Pikafish/releases/download/Pikafish-2026-01-02/Pikafish.2026-01-02.7z
+  NNUE_URL: https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
 
 jobs:
   Pikafish-WASM:
@@ -38,11 +38,8 @@ jobs:
       - name: Download NNUE network
         run: |
           source $EMSDK_PATH/emsdk_env.sh
-          sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full
-          curl -skL "${{ env.NNUE_URL }}" -o Pikafish.7z
-          7z e Pikafish.7z pikafish.nnue -y
+          curl -skL "${{ env.NNUE_URL }}" -o pikafish.nnue
           ls -lh pikafish.nnue
-          rm -f Pikafish.7z
 
       - name: Build WASM (non-relaxed fallback)
         run: |
@@ -85,17 +82,17 @@ jobs:
           cp pikafish.relaxed.wasm   ../xqwlight/wasm/
           cp pikafish.nnue           ../xqwlight/wasm/
 
-      - name: Online test engine search
+      - name: WASM test go depth 20
         working-directory: xqwlight/wasm
         run: |
           echo "=== Testing relaxed-simd engine info ==="
           node pikafish.relaxed.js compiler
-          echo "=== Running relaxed-simd bench search test ==="
-          node pikafish.relaxed.js bench 16 1 1
+          echo "=== Running relaxed-simd go depth 20 ==="
+          echo -e "uci\nisready\nposition startpos\ngo depth 20\nquit" | timeout 300 node pikafish.relaxed.js
           echo "=== Testing non-relaxed engine info ==="
           node pikafish.js compiler
-          echo "=== Running non-relaxed bench search test ==="
-          node pikafish.js bench 16 1 1
+          echo "=== Running non-relaxed go depth 20 ==="
+          echo -e "uci\nisready\nposition startpos\ngo depth 20\nquit" | timeout 300 node pikafish.js
 
       - name: Sync engine version to frontend
         working-directory: ./

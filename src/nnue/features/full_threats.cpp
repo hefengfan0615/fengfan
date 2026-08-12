@@ -21,29 +21,32 @@
 #include "full_threats.h"
 
 #include <array>
+#include <utility>
 
+#include "../../attacks.h"
+#include "../../bitboard.h"
+#include "../../misc.h"
 #include "../../position.h"
 #include "../../types.h"
 #include "../nnue_common.h"
+#include "half_ka_v2_hm.h"
 
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
 auto ThreatOffsets = []() {
-    std::array<std::array<std::array<std::array<uint16_t, PIECE_NB>, SQUARE_NB>, SQUARE_NB>,
-               PIECE_NB>
-      ThreatOffsets{};
+    MultiArray<u16, PIECE_NB, SQUARE_NB, SQUARE_NB, PIECE_NB> ThreatOffsets{};
     // clang-format off
     constexpr bool ValidPairs[PIECE_NB][PIECE_NB] = {
       //    R   A   C   P   N   B   K   _   r   a   c   p   n   b   k
       { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, // _
       { 0,  1,  1,  1,  1,  1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  0}, // R
-      { 0,  1,  1,  1,  0,  1,  0,  1,  0,  1,  0,  1,  1,  1,  0,  0}, // A
+      { 0,  1,  1,  1,  0,  1,  0,  0,  0,  1,  0,  1,  1,  1,  0,  0}, // A
       { 0,  1,  1,  1,  1,  1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  0}, // C
       { 0,  0,  0,  1,  1,  1,  1,  0,  0,  0,  1,  1,  1,  1,  1,  0}, // P
       { 0,  1,  1,  1,  1,  1,  1,  1,  0,  1,  1,  1,  1,  1,  1,  0}, // N
       { 0,  1,  0,  1,  1,  1,  1,  1,  0,  1,  0,  1,  1,  1,  0,  0}, // B
-      { 0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0,  1,  1,  1,  0,  0}, // K
+      { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, // K
       { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}, // _
       { 0,  1,  1,  1,  1,  1,  1,  0,  0,  1,  1,  1,  1,  1,  1,  1}, // r
       { 0,  1,  0,  1,  1,  1,  0,  0,  0,  1,  1,  1,  0,  1,  0,  1}, // a
@@ -56,10 +59,10 @@ auto ThreatOffsets = []() {
     // clang-format on
 
     // Initialize threat offsets to be all Dimension
-    for (size_t i = 0; i < PIECE_NB; ++i)
-        for (size_t j = 0; j < SQUARE_NB; ++j)
-            for (size_t k = 0; k < SQUARE_NB; ++k)
-                for (size_t l = 0; l < PIECE_NB; ++l)
+    for (u8 i = 0; i < PIECE_NB; ++i)
+        for (u8 j = 0; j < SQUARE_NB; ++j)
+            for (u8 k = 0; k < SQUARE_NB; ++k)
+                for (u8 l = 0; l < PIECE_NB; ++l)
                     ThreatOffsets[i][j][k][l] = FullThreats::Dimensions;
 
     int cumulativeOffset = 0;
@@ -72,12 +75,12 @@ auto ThreatOffsets = []() {
             {
                 Bitboard attacks = Bitboard(0);
                 if (pt == PAWN)
-                    attacks = attacks_bb<PAWN>(from, color_of(attacker));
+                    attacks = Attacks::attacks_bb<PAWN>(from, color_of(attacker));
                 else if (pt == CANNON)
-                    attacks =
-                      Bitboards::sliding_attack<CANNON>(from, unconstrained_attacks_bb<KING>(from));
+                    attacks = Attacks::sliding_attack<CANNON>(
+                      from, Attacks::unconstrained_attacks_bb<KING>(from));
                 else
-                    attacks = PseudoAttacks[pt][from];
+                    attacks = Attacks::PseudoAttacks[pt][from];
 
                 for (Piece attacked : HalfKAv2_hm::AllPieces)
                     if (ValidPairs[attacker][attacked])
@@ -123,8 +126,8 @@ IndexType FullThreats::make_index(
 
 // Get a list of indices for active features in ascending order
 void FullThreats::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
-    Square ksq  = pos.king_square(perspective);
-    Square oksq = pos.king_square(~perspective);
+    const Square ksq  = pos.king_square(perspective);
+    const Square oksq = pos.king_square(~perspective);
     auto& [_, mirror] =
       HalfKAv2_hm::KingBuckets[ksq][oksq][HalfKAv2_hm::requires_mid_mirror(pos, perspective)];
     Bitboard occupied = pos.pieces();
@@ -136,8 +139,9 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
         Piece     attacker = pos.piece_on(from);
         PieceType pt       = type_of(attacker);
         Color     c        = color_of(attacker);
-        Bitboard  attacks =
-          (pt == PAWN ? attacks_bb<PAWN>(from, c) : attacks_bb(pt, from, occupied)) & occupied;
+        Bitboard  attacks  = (pt == PAWN ? Attacks::attacks_bb<PAWN>(from, c)
+                                         : Attacks::attacks_bb(pt, from, occupied))
+                           & occupied;
 
         while (attacks)
         {
@@ -145,16 +149,20 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
             Piece     attacked = pos.piece_on(to);
             IndexType index    = make_index(perspective, attacker, from, to, attacked, mirror);
 
-            if (index < Dimensions)
-                active.push_back(index);
+            active.push_back_if_lt(index, Dimensions);
         }
     }
 }
 
 // Get a list of indices for recently changed features
-void FullThreats::append_changed_indices(
-  Color perspective, bool mirror, const DiffType& diff, IndexList& removed, IndexList& added) {
-    for (const auto dirty : diff.list)
+void FullThreats::append_changed_indices(Color                   perspective,
+                                         bool                    mirror,
+                                         const DiffType&         diff,
+                                         IndexList&              removed,
+                                         IndexList&              added,
+                                         const ThreatWeightType* prefetchBase,
+                                         IndexType               prefetchStride) {
+    for (const auto& dirty : diff.list)
     {
         auto attacker = dirty.pc();
         auto attacked = dirty.threatened_pc();
@@ -165,13 +173,50 @@ void FullThreats::append_changed_indices(
         auto&     insert = add ? added : removed;
         IndexType index  = make_index(perspective, attacker, from, to, attacked, mirror);
 
-        if (index < Dimensions)
-            insert.push_back(index);
+        if (prefetchBase)
+            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
+              reinterpret_cast<uintptr_t>(prefetchBase) + uintptr_t(index) * prefetchStride));
+        insert.push_back_if_lt(index, Dimensions);
     }
 }
 
-bool FullThreats::requires_refresh(const DiffType& diff, Color perspective) {
-    return diff.requires_refresh[perspective];
+void FullThreats::append_changed_indices_both(bool                    white_mirror,
+                                              bool                    black_mirror,
+                                              const DiffType&         diff,
+                                              IndexList&              white_removed,
+                                              IndexList&              white_added,
+                                              IndexList&              black_removed,
+                                              IndexList&              black_added,
+                                              const ThreatWeightType* prefetchBase,
+                                              IndexType               prefetchStride) {
+
+    for (const auto& dirty : diff.list)
+    {
+        const Piece  attacker = dirty.pc();
+        const Piece  attacked = dirty.threatened_pc();
+        const Square from     = dirty.pc_sq();
+        const Square to       = dirty.threatened_sq();
+        const bool   add      = dirty.add();
+
+        auto& white_insert = add ? white_added : white_removed;
+        auto& black_insert = add ? black_added : black_removed;
+
+        const IndexType white_index =
+          make_index(WHITE, attacker, from, to, attacked, white_mirror);
+        const IndexType black_index =
+          make_index(BLACK, attacker, from, to, attacked, black_mirror);
+
+        if (prefetchBase)
+        {
+            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
+              reinterpret_cast<uintptr_t>(prefetchBase) + uintptr_t(white_index) * prefetchStride));
+            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
+              reinterpret_cast<uintptr_t>(prefetchBase) + uintptr_t(black_index) * prefetchStride));
+        }
+
+        white_insert.push_back_if_lt(white_index, Dimensions);
+        black_insert.push_back_if_lt(black_index, Dimensions);
+    }
 }
 
 }  // namespace Stockfish::Eval::NNUE::Features
