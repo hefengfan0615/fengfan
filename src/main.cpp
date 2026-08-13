@@ -81,7 +81,7 @@ void wasm_uci_execute() {
         initialized = true;
     }
 
-    uci->set_cli(cli);
+    uci->set_cli(std::move(cli));
     uci->loop();
 }
 }

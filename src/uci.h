@@ -42,7 +42,7 @@ class UCIEngine {
     UCIEngine(CommandLine cli);
 
     void loop();
-    void set_cli(const CommandLine& cli_) { this->cli = cli_; }
+    void set_cli(CommandLine&& cli_) { this->cli = std::move(cli_); }
 
     static int         to_cp(Value v, const Position& pos);
     static std::string format_score(const Score& s);
