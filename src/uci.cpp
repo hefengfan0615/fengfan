@@ -100,7 +100,7 @@ void UCIEngine::loop() {
 
     do
     {
-        if (cli.argc == 1
+        if (cli.argc <= 1
             && !getline(std::cin, cmd))  // Wait for an input or an end-of-file (EOF) indication
             cmd = "quit";
 

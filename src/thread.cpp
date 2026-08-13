@@ -91,8 +91,8 @@ Thread::~Thread() {
     assert(!searching);
 
     exit = true;
-    start_searching();
 #ifndef WASM_SINGLE_THREAD
+    start_searching();
     stdThread.join();
 #endif
 }

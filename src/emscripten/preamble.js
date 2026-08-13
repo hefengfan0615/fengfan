@@ -8,6 +8,11 @@ Module["preRun"].push(function () {
   // otherwise the web page interface will take over.
   if (Module["stdin"]) return;
 
+  // In Node.js, when stdin is piped (not a TTY), let main() read from
+  // the actual process stdin instead of overriding with a custom stdin.
+  if (typeof process !== "undefined" && process.stdin
+      && !process.stdin.isTTY) return;
+
   let input = {
     str: "",
     index: 0,
