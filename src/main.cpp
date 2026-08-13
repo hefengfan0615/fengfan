@@ -18,6 +18,7 @@
 
 #include <iostream>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "attacks.h"
@@ -61,19 +62,26 @@ int main(int argc, char* argv[]) {
 extern "C" {
 EMSCRIPTEN_KEEPALIVE
 void wasm_uci_execute() {
-    static bool initialized = false;
+    // Read one line of input from stdin, then execute it as a single UCI command.
+    // Using argc=2 ensures the loop() processes exactly one command and exits,
+    // without accidentally calling engine.stop() on a subsequent iteration.
+    std::string input;
+    std::getline(std::cin, input);
+    char* argv[2] = {input.data(), input.data()};
+    auto  cli     = CommandLine(2, argv);
+
+    static bool                      initialized = false;
+    static std::unique_ptr<UCIEngine> uci;
     if (!initialized)
     {
         Attacks::init();
         Position::init();
+        uci = std::make_unique<UCIEngine>(std::move(cli));
+        Tune::init(uci->engine_options());
         initialized = true;
     }
 
-    static auto cli = CommandLine(0, nullptr);
-    static auto uci = std::make_unique<UCIEngine>(std::move(cli));
-
-    Tune::init(uci->engine_options());
-
+    uci->set_cli(cli);
     uci->loop();
 }
 }

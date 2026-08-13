@@ -225,14 +225,9 @@ std::optional<PositionSetError> Position::set(const string& fenStr, StateInfo* s
     }
 
     // 2. Active color
-    if (!(ss >> token))
-        return PositionSetError("Invalid FEN. Unexpected end of stream.");
-    if (token != 'w' && token != 'b')
-        return PositionSetError(std::string("Invalid FEN. Invalid side to move: ")
-                                + std::string(1, token));
+    ss >> token;
     sideToMove = (token == 'w' ? WHITE : BLACK);
-    if (!(ss >> token) || !isspace(token) || ss.eof())
-        return PositionSetError("Invalid FEN. Expected whitespace after side to move.");
+    ss >> token;
 
     while ((ss >> token) && !isspace(token))
         ;
@@ -242,12 +237,6 @@ std::optional<PositionSetError> Position::set(const string& fenStr, StateInfo* s
 
     // 3-4. Halfmove clock and fullmove number
     ss >> std::skipws >> st->rule60 >> gamePly;
-
-    if (st->rule60 < 0 || st->rule60 > 119)
-        return PositionSetError("Unsupported position. Rule60 counter out of range.");
-
-    if (gamePly < 0 || gamePly > 100000)
-        return PositionSetError("Unsupported position. Game ply out of range.");
 
     // Convert from fullmove starting from 1 to gamePly starting from 0,
     // handle also common incorrect FEN with fullmove = 0.

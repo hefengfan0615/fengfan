@@ -100,7 +100,7 @@ void UCIEngine::loop() {
 
     do
     {
-        if (cli.argc <= 1
+        if (cli.argc == 1
             && !getline(std::cin, cmd))  // Wait for an input or an end-of-file (EOF) indication
             cmd = "quit";
 
@@ -185,7 +185,7 @@ void UCIEngine::loop() {
             sync_cout << "Unknown command: '" << cmd << "'. Type help for more information."
                       << sync_endl;
 
-    } while (token != "quit" && cli.argc <= 1);  // The command-line arguments are one-shot
+    } while (token != "quit" && cli.argc == 1);  // The command-line arguments are one-shot
 }
 
 Search::LimitsType UCIEngine::parse_limits(std::istream& is) {

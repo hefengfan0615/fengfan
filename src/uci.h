@@ -42,6 +42,7 @@ class UCIEngine {
     UCIEngine(CommandLine cli);
 
     void loop();
+    void set_cli(const CommandLine& cli_) { this->cli = cli_; }
 
     static int         to_cp(Value v, const Position& pos);
     static std::string format_score(const Score& s);
