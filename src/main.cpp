@@ -61,6 +61,14 @@ int main(int argc, char* argv[]) {
 extern "C" {
 EMSCRIPTEN_KEEPALIVE
 void wasm_uci_execute() {
+    static bool initialized = false;
+    if (!initialized)
+    {
+        Attacks::init();
+        Position::init();
+        initialized = true;
+    }
+
     static auto cli = CommandLine(0, nullptr);
     static auto uci = std::make_unique<UCIEngine>(std::move(cli));
 

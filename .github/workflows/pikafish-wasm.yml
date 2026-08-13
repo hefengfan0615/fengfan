@@ -7,7 +7,6 @@ on:
   workflow_dispatch: 
 env:
   EMSDK_PATH: /tmp/emsdk
-  NNUE_URL: https://github.com/official-pikafish/Networks/releases/download/master-net/pikafish.nnue
 
 jobs:
   Pikafish-WASM:
@@ -35,10 +34,9 @@ jobs:
           echo "emcc: $(which emcc)"
           emcc --version
 
-      - name: Download NNUE network
+      - name: Copy NNUE from repo
         run: |
-          source $EMSDK_PATH/emsdk_env.sh
-          curl -skL "${{ env.NNUE_URL }}" -o pikafish.nnue
+          cp ../xqwlight/wasm/pikafish.nnue pikafish.nnue
           ls -lh pikafish.nnue
 
       - name: Build WASM (non-relaxed fallback)
