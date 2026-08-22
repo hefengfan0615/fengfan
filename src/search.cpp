@@ -1569,8 +1569,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     Key   posKey;
     Move  move, bestMove;
-    Value bestValue, value, futilityBase;
-    bool  pvHit, givesCheck, capture;
+    Value bestValue, value;
+    bool  pvHit, givesCheck;
     int   moveCount;
 
     // Step 1. Initialize node
@@ -1632,7 +1632,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
     if (ss->inCheck)
-        bestValue = futilityBase = -VALUE_INFINITE;
+        bestValue = -VALUE_INFINITE;
     else
     {
         const auto correctionValue = correction_value(*this, pos, ss);
@@ -1674,13 +1674,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         if (bestValue > alpha)
             alpha = bestValue;
-
-        futilityBase = ss->staticEval + 220;
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory};
-
-    Square prevSq = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
 
     // Initialize a MovePicker object for the current position, and prepare to search
     // the moves. We presently use two stages of move generator in quiescence search:
@@ -1698,48 +1694,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             continue;
 
         givesCheck = pos.gives_check(move);
-        capture    = pos.capture(move);
 
         moveCount++;
 
-        // Step 6. Pruning
-        if (!is_loss(bestValue))
-        {
-            // Futility pruning and moveCount pruning
-            if (!givesCheck && move.to_sq() != prevSq && !is_loss(futilityBase))
-            {
-                if (moveCount > 2)
-                    continue;
-
-                Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
-
-                // If static eval + value of piece we are going to capture is
-                // much lower than alpha, we can prune this move.
-                if (futilityValue <= alpha)
-                {
-                    bestValue = std::max(bestValue, futilityValue);
-                    continue;
-                }
-
-                // If static exchange evaluation is low enough
-                // we can prune this move.
-                if (!pos.see_ge(move, alpha - futilityBase))
-                {
-                    bestValue = std::max(bestValue, std::min(alpha, futilityBase));
-                    continue;
-                }
-            }
-
-            // Skip non-captures
-            if (!capture)
-                continue;
-
-            // Do not search moves with bad enough SEE values
-            if (!pos.see_ge(move, -106))
-                continue;
-        }
-
-        // Step 7. Make and search the move
+        // Step 6. Make and search the move
         do_move(pos, move, st, givesCheck, ss);
 
         value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha);
@@ -1747,7 +1705,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
 
-        // Step 8. Check for a new best move
+        // Step 7. Check for a new best move
         if (value > bestValue)
         {
             bestValue = value;
@@ -1767,7 +1725,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
     }
 
-    // Step 9. Check for mate and stalemate
+    // Step 8. Check for mate and stalemate
     // All legal moves have been searched. A special case: if no legal
     // moves were found, it is checkmate.
     if (!moveCount && (ss->inCheck || [&] {
