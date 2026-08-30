@@ -359,6 +359,9 @@ class Worker {
     Depth     rootDepth;
     Value     rootDelta;
 
+    // Cached Aggressiveness option (0-300, 100 = neutral), ported from Duffish.
+    int cachedAggressiveness = 165;
+
     PVMoves lastIterationIdxPV;
 
     usize                     threadIdx, numaThreadIdx, numaTotal;

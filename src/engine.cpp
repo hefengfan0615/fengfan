@@ -109,6 +109,11 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
     options.add("UCI_ShowWDL", Option(false));
 
+    // Aggressiveness (ported from Duffish): controls the engine's overall
+    // attacking style. >100 = more aggressive (deeper search of attacking
+    // moves), <100 = more conservative, 100 = neutral.
+    options.add("Aggressiveness", Option(165, 0, 300));
+
     options.add(  //
       "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
           load_network(path_from_utf8(std::string(o)));

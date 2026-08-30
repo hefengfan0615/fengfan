@@ -278,6 +278,9 @@ bool Search::Worker::iterative_deepening() {
     double timeReduction = 1, totBestMoveChanges = 0;
     int    delta, iterIdx                        = 0;
 
+    // Cache the Aggressiveness option for this search (ported from Duffish).
+    cachedAggressiveness = int(options["Aggressiveness"]);
+
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
     // (ss + 2) is needed for initialization of cutOffCnt.
@@ -1272,6 +1275,13 @@ moves_loop:  // When in check, search starts here
         // Step 16. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
         {
+            // Aggressiveness (ported from Duffish): when Aggressiveness > 100,
+            // search checks/captures by the side to move more deeply by reducing
+            // their LMR reduction. Neutral at 100, conservative below.
+            int aggressiveness = (us == rootPos.side_to_move()) ? cachedAggressiveness : 100;
+            if (aggressiveness > 100 && (givesCheck || capture))
+                r -= 512 * (aggressiveness - 100) / 100;
+
             // In general we want to cap the LMR depth search at newDepth, but when
             // reduction is negative, we allow this move a limited search extension
             // beyond the first move depth.
