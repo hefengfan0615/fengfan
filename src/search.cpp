@@ -115,8 +115,22 @@ void update_correction_history(const Position& pos,
     }
 }
 
-// Add a small random component to draw evaluations to avoid 3-fold blindness
-Value value_draw(usize nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
+// Add a small random component to draw evaluations to avoid 3-fold blindness,
+// plus a root-side contempt from the Duffish DrawValue / DrawMatBias options.
+Value value_draw(usize nodes, const AggressivenessParams& p, Color us) {
+
+    Value contempt = p.rootColor < COLOR_NB ? Value(us == p.rootColor ? p.drawValue : -p.drawValue)
+                                            : VALUE_ZERO;
+
+    if (p.drawMatBias != 0 && p.rootColor < COLOR_NB)
+    {
+        int matImbalance = p.rootColor == WHITE ? p.rootNonPawnMatDiff : -p.rootNonPawnMatDiff;
+        int bias         = p.drawMatBias * matImbalance / 500;
+        contempt += Value(us == p.rootColor ? bias : -bias);
+    }
+
+    return VALUE_DRAW - 1 + Value(nodes & 0x2) + contempt;
+}
 Value value_to_tt(Value v, int ply);
 Value value_from_tt(Value v, int ply, int r60c);
 void  update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
@@ -277,6 +291,26 @@ bool Search::Worker::iterative_deepening() {
     Color  us            = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
     int    delta, iterIdx                        = 0;
+
+    // Cache the Duffish-style Aggressiveness parameters for this search (root
+    // side, root material balance and the UCI option values).
+    {
+        AggressivenessParams& p = aggressivenessParams;
+        p.rootColor             = us;
+        p.rootMaterialBalance   = xiangqi_material_balance(rootPos, us);
+        p.rootNonPawnMatDiff    = xiangqi_non_pawn_material(rootPos, WHITE)
+                                - xiangqi_non_pawn_material(rootPos, BLACK);
+        p.aggressiveness    = int(options["Aggressiveness"]);
+        p.drawValue         = int(options["DrawValue"]);
+        p.dynamicComp       = int(options["DynamicComp"]);
+        p.sacBonus          = int(options["SacBonus"]);
+        p.advisorBreakBonus = int(options["AdvisorBreakBonus"]);
+        p.bishopBreakBonus  = int(options["BishopBreakBonus"]);
+        p.matScale          = int(options["MatScale"]);
+        p.sacDetect         = int(options["SacDetect"]);
+        p.drawMatBias       = int(options["DrawMatBias"]);
+        p.evalDecay         = int(options["EvalDecay"]);
+    }
 
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
@@ -746,7 +780,8 @@ Value Search::Worker::search(
         // Step 2. Check for aborted search and repetition
         Value result = VALUE_NONE;
         if (pos.rule_judge(result, ss->ply))
-            return result == VALUE_DRAW ? value_draw(nodes) : result;
+            return result == VALUE_DRAW ? value_draw(nodes, aggressivenessParams, pos.side_to_move())
+                                        : result;
         if (result != VALUE_NONE)
         {
             assert(result != VALUE_DRAW);
@@ -762,7 +797,9 @@ Value Search::Worker::search(
         }
 
         if (threads.stop.load(std::memory_order_relaxed) || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
+            return (ss->ply >= MAX_PLY && !ss->inCheck)
+                     ? evaluate(pos)
+                     : value_draw(nodes, aggressivenessParams, pos.side_to_move());
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply + 1), but if alpha is already bigger because
@@ -1236,6 +1273,16 @@ moves_loop:  // When in check, search starts here
         r += 855;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 64;
         r -= std::abs(correctionValue) / 30558;
+
+        // Duffish-style Aggressiveness: keep the root side's search invested in
+        // forcing moves (checks/captures) by reducing their late-move reduction.
+        {
+            const int aggression = us == aggressivenessParams.rootColor
+                                     ? aggressivenessParams.aggressiveness
+                                     : 100;
+            if (aggression > 100 && (givesCheck || capture))
+                r -= 512 * (aggression - 100) / 100;
+        }
 
         // Increase reduction for cut nodes
         if (cutNode)
@@ -1809,8 +1856,13 @@ TimePoint Search::Worker::elapsed() const {
 }
 
 Value Search::Worker::evaluate(const Position& pos) {
-    return Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()]);
+    Value v = Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
+                             optimism[pos.side_to_move()]);
+
+    // Duffish-style Aggressiveness: reshape the evaluation from the root side's
+    // perspective, rewarding attack pressure, palace threats and compensation
+    // for sacrificed material.
+    return apply_duffish_eval_shaping(pos, v, aggressivenessParams);
 }
 
 namespace {

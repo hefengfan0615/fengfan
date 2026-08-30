@@ -30,6 +30,7 @@
 #include <vector>
 #include <cstring>
 
+#include "aggressiveness.h"
 #include "history.h"
 #include "misc.h"
 #include "nnue/nnue_accumulator.h"
@@ -358,6 +359,10 @@ class Worker {
     RootMoves rootMoves;
     Depth     rootDepth;
     Value     rootDelta;
+
+    // Duffish-style Aggressiveness parameters, cached per-thread at the start of
+    // a search from the UCI options and the root position.
+    AggressivenessParams aggressivenessParams;
 
     PVMoves lastIterationIdxPV;
 
