@@ -118,6 +118,10 @@ struct Stack {
     bool                        followPV;
     int                         cutoffCnt;
     int                         reduction;
+    // Duffish-style Aggressiveness: per-node material balance relative to the
+    // root side and a running "sacrifice trace" used for attack compensation.
+    int materialDiff;
+    int sacrificeTrace;
 };
 
 
@@ -352,6 +356,21 @@ class Worker {
     int                selDepth, nmpMinPly;
 
     Value optimism[COLOR_NB];
+
+    // Duffish-style Aggressiveness: cached UCI option values and root-side
+    // context, refreshed at the start of every search.
+    Color rootColor = COLOR_NB;
+    int   rootMaterialBalance = 0;
+    int   cachedAggressiveness = 165;
+    int   cachedDrawValue = -39;
+    int   cachedDynamicComp = 63;
+    int   cachedSacBonus = 45;
+    int   cachedAdvisorBreakBonus = 35;
+    int   cachedBishopBreakBonus = 16;
+    int   cachedMatScale = 10;
+    int   cachedSacDetect = 12;
+    int   cachedDrawMatBias = 25;
+    int   cachedEvalDecay = 35;
 
     Position  rootPos;
     StateInfo rootState;

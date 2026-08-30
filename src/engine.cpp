@@ -109,6 +109,20 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
     options.add("UCI_ShowWDL", Option(false));
 
+    // Duffish-style Aggressiveness customization options.
+    // These control the engine's overall attacking style and are ported from
+    // the Duffish xiangqi engine (see https://github.com/lxsgx23/Duffish).
+    options.add("Aggressiveness", Option(165, 0, 300));
+    options.add("DrawValue", Option(-39, -100, 100));
+    options.add("SacBonus", Option(45, 0, 200));
+    options.add("DynamicComp", Option(63, 0, 150));
+    options.add("AdvisorBreakBonus", Option(35, 0, 150));
+    options.add("BishopBreakBonus", Option(16, 0, 150));
+    options.add("MatScale", Option(10, 0, 150));
+    options.add("SacDetect", Option(12, 0, 150));
+    options.add("DrawMatBias", Option(25, -100, 100));
+    options.add("EvalDecay", Option(35, 0, 100));
+
     options.add(  //
       "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
           load_network(path_from_utf8(std::string(o)));
