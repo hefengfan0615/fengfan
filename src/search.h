@@ -353,6 +353,10 @@ class Worker {
 
     Value optimism[COLOR_NB];
 
+    // Ported from Duffish's Aggressiveness: cached per-thread value of the
+    // UCI option (100 = neutral). Only affects search reduction, never scoring.
+    int cachedAggressiveness = 100;
+
     Position  rootPos;
     StateInfo rootState;
     RootMoves rootMoves;

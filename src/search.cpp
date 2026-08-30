@@ -278,6 +278,9 @@ bool Search::Worker::iterative_deepening() {
     double timeReduction = 1, totBestMoveChanges = 0;
     int    delta, iterIdx                        = 0;
 
+    // Ported from Duffish: cache the Aggressiveness UCI option once per search.
+    cachedAggressiveness = int(options["Aggressiveness"]);
+
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
     // (ss + 2) is needed for initialization of cutOffCnt.
@@ -1236,6 +1239,13 @@ moves_loop:  // When in check, search starts here
         r += 855;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 64;
         r -= std::abs(correctionValue) / 30558;
+
+        // Ported from Duffish's Aggressiveness: for the root (engine) side only,
+        // search checking/capturing moves deeper when aggressive (>100). Reduction
+        // scaling matches Duffish; never touches evaluation.
+        if (us == rootPos.side_to_move() && cachedAggressiveness > 100
+            && (givesCheck || capture))
+            r -= 512 * (cachedAggressiveness - 100) / 100;
 
         // Increase reduction for cut nodes
         if (cutNode)

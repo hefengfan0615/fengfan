@@ -105,6 +105,12 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
 
     options.add("Move Overhead", Option(10, 0, 5000));
 
+    // Ported from Duffish: controls the engine's attacking style.
+    // 100 = neutral (no change). >100 = more aggressive: the engine searches
+    // its own checking/capturing moves deeper (reduced LMR). <100 = more
+    // conservative. This only affects search reduction, not evaluation.
+    options.add("Aggressiveness", Option(100, 0, 300));
+
     options.add("nodestime", Option(0, 0, 10000));
 
     options.add("UCI_ShowWDL", Option(false));
